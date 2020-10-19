@@ -1,9 +1,7 @@
 import rospy, math
 from sensor_msgs.msg import JointState
-from std_msgs.msg    import Float64MultiArray
 from franka_core_msgs.msg import JointCommand, RobotState
 import numpy as np
-from copy import deepcopy
 
 # Globally defined variables
 PI = math.pi

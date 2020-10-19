@@ -1,6 +1,7 @@
 from __future__ import print_function
 import rospy, math, time
 from sensor_msgs.msg import JointState
+from franka_core_msgs.msg import JointCommand, RobotState
 from std_msgs.msg    import Float64MultiArray
 import numpy as np
 from   numpy import linalg as LA
@@ -13,85 +14,76 @@ from generic_kinematics_model.kinematics import Kinematics
 import pyquaternion as pyQuat
 Quaternion = pyQuat.Quaternion
 
-######## Globally defined variables ########
+from franka_core_msgs.msg import JointCommand, RobotState
+import numpy as np
+
+# Globally defined variables
 PI = math.pi
+arm_joint_names = ['panda_joint1','panda_joint2','panda_joint3','panda_joint4','panda_joint5','panda_joint6','panda_joint7']
 
-arm_joint_names = [
-    'joint1', 'joint2', 'joint3',
-    'joint4', 'joint5', 'joint6'
-]
 
+# Franka Panda Emika Limits and DH parameters: https://frankaemika.github.io/docs/control_parameters.html
 # Limits for Kinematics Class
-ur10_maxPos   = [PI, PI, PI, PI, PI, PI]
-ur10_minPos   = [-PI, -PI, -PI, -PI, -PI, -PI]
+panda_maxPos   = [2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973]
+panda_minPos   = [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
+panda_maxVel   = [2.1750, 2.1750, 2.1750, 2.1750, 2.6100, 2.6100, 2.6100]
+panda_maxAcc   = [15, 7.5, 10, 12.5, 15, 20, 20]
 
-# MELFA ASSISTA LIMITS [from Spec Sheet]
-ur10_maxVel   = [2.16 , 2.16 , 2.16 , 5.18, 6.12, 6.28]
-
-# MELFA ASSISTA LIMITS [tested on the robot -- greater gives errors]
-ur10_maxVel   = [2.16 * 0.65, 2.16 * 0.65, 2.16 * 0.65, 5.18* 0.55, 6.12* 0.55, 6.28 * 0.55]
-
-
-# with 0.55 it gives the power supply error (brake).. 
-
-# 250 mm/s
 # DH Parameters for Kinematics Class
-ur10_DH_a      = [0.0 ,-0.612 ,-0.5723 , 0.0 , 0.0 , 0.0]
-ur10_DH_d      = [0.1273, 0.0, 0.0, 0.163941, 0.1157, 0.0922]
-ur10_DH_alpha  = [PI/2.0, 0.0, 0.0, PI/2.0, -PI/2.0, 0.0 ]
-ur10_DH_theta0 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+panda_DH_a      = [0.0, 0.0, 0.0, 0.0825, -0.0825, 0.0, 0.088]
+panda_DH_d      = [0.333, 0.0, 0.316, 0.0, 0.384, 0.0, 0.0, 0.107]
+panda_DH_alpha  = [0.0, -PI/2.0, PI/2.0, PI/2.0, -PI/2.0, PI/2.0, PI/2.0 ]
+panda_DH_theta0 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-# Relative pose between Robbie-base (world) and arm-base
-T_base_rel = np.array([  [-0.0002037,  1.0000000,  0.0000000, 0.33000],
-               [-1.0000000, -0.0002037,  0.0000000, 0.00000],
-               [0.0000000,  0.0000000,  1.0000000,  0.48600],
-               [0.0000000, 0.0000000, 0.0000000, 1.0000000]])
+# Relative pose between world and arm-base
+T_base_rel = np.array([  [1,  0,  0, 0],
+                         [0,  1,  0, 0],
+                         [0,  0,  1,  0.625],
+                          [0, 0, 0, 1]])
 
-# Necessary for UR robots due to errors in URDF file!
-T_base_UR = np.array([[-1.0,  0.0, 0.0, 0.0],
-                    [0.0, -1.0, 0.0,  0.0],
-                    [0.0,   0.0, 1.0,  0.0],                      
-                    [0.0 ,  0.0,  0.0, 1.0]])
-T_ee_UR   = np.array([[0, -1, 0, 0], 
-                    [0, 0, -1, 0],
-                    [1, 0, 0, 0],
-                    [0, 0, 0, 1]])
+T_ee_panda   = np.array([[1, 0, 0, 0], 
+                         [0, 1, 0, 0],
+                         [0, 0, 1, 0],
+                         [0, 0, 0, 1]])
 
 class JointMotionControl_StateDependent(object):
     """
-        This class sends joint velocities/positions to the UR10 by following a time-dependent a straight-line trajectory 
-        in joint space that reaches a joint-position goal with different joint velocity control methods
+        This class sends joint velocities to the Franka Panda Robot by following a state-dependent linear Dynamical System in Joint Space 
+        in joint space that reaches a joint-position goal (DS_type=1) or task-space goal (DS_type=2))
     """
-    def __init__(self, DS_type = 1, A = [0.0] * 6, DS_attractor = [0.0] * 6, ctrl_rate = 150, cmd_type = 1, epsilon = 0.005, vel_limits = ur10_maxVel, null_space = [0.0] * 6):
+    def __init__(self, DS_type = 1, A = [0.0] * 7, DS_attractor = [0.0] * 7, ctrl_rate = 1000, cmd_type = 1, epsilon = 0.005, vel_limits = panda_maxVel, null_space = [0.0] * 7):
 
-        # Subscribe to current joint state (position, velocity, effort)
-        self._sub        = rospy.Subscriber('/joint_states', JointState, self._joint_states_cb)
+        # Subscribe to robot joint state
+        self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, self._joint_states_cb)
 
-        # Publishers that send velocity command to a filter (CDDynamics) before sending to robot
-        self._pub_vel    = rospy.Publisher('/cobot/desired_joint_velocity', Float64MultiArray, queue_size=10)        
-
-        # Robot Joint States
-        self.arm_joint_names    = []
-        self.position           = [0,0,0,0,0,0]
-        self.velocity           = [0,0,0,0,0,0]
-        self.arm_dof            = len(arm_joint_names)        
+        # Subscribe to robot state (Refer JointState.msg to find all available data. 
+        # Note: All msg fields are not populated when using the simulated environment)
+        # self._sub_rs = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/robot_state', RobotState, self._robot_states_cb)
         
+        # Published joint command
+        self._pub = rospy.Publisher('/panda_simulator/motion_controller/arm/joint_commands',JointCommand, queue_size = 1, tcp_nodelay = True)
+
+        # Robot state
+        self.arm_joint_names  = []
+        self.position         = [0,0,0,0,0,0,0]
+        self.velocity         = [0,0,0,0,0,0,0]
+        self.arm_dof          = len(arm_joint_names)
+
+        # Create JointCommand message to publish commands
+        self.pubmsg       = JointCommand()
+        self.pubmsg.names = arm_joint_names # names of joints (has to be 7 and in the same order as the command fields (positions, velocities, efforts))
+        self.pubmsg.mode  = self.pubmsg.VELOCITY_MODE # Specify control mode (POSITION_MODE, VELOCITY_MODE, IMPEDANCE_MODE (not available in sim), TORQUE_MODE
+
         # Robot Jacobian and EE representations
         self.jacobian           = []
         self.ee_pose            = []
         self.ee_pos             = []
         self.ee_rot             = []
         self.ee_quat            = []
-
-        # Robot commands        
-        self.Vel_msg          = Float64MultiArray()
-        self.Vel_msg.data     = [0,0,0,0,0,0]
-        self.cmd_type         = cmd_type
         
-
         # Control Variables
         self.desired_velocity   = [0,0,0,0,0,0]
-        self.vel_limits         = np.array(ur10_maxVel)
+        self.vel_limits         = np.array(panda_maxVel)
         self.add_nullspace      = 0
 
         # Variables for DS-Motion Generator
@@ -124,10 +116,10 @@ class JointMotionControl_StateDependent(object):
             # Initialize Arm Kinematics-Chain Class for FK and Jacobian Computation
             self.arm_kinematics = Kinematics(self.arm_dof)
             for i in range(self.arm_dof):
-                self.arm_kinematics.setDH(i, ur10_DH_a[i], ur10_DH_d[i], ur10_DH_alpha[i], ur10_DH_theta0[i], 1, ur10_minPos[i], ur10_maxPos[i], ur10_maxVel[i])
-            self.T_base = np.dot(T_base_rel, T_base_UR)
+                self.arm_kinematics.setDH(i, panda_DH_a[i], panda_DH_d[i], panda_DH_alpha[i], panda_DH_theta0[i], 1, panda_minPos[i], panda_maxPos[i], panda_maxVel[i])
+            self.T_base        = T_base_rel
             self.arm_kinematics.setT0(self.T_base)
-            self.arm_kinematics.setTF(T_ee_UR)
+            self.arm_kinematics.setTF(T_ee_panda)
             self.arm_kinematics.readyForKinematics()
             self._forwardKinematics()
             self._computeJacobian()
@@ -252,14 +244,9 @@ class JointMotionControl_StateDependent(object):
         rospy.loginfo('Raw Desired Velocity: {}'.format(des_vel))
 
         # Cap joint velocities with velocity limits        
-        # for j in range(self.arm_dof):
-        #     if abs(des_vel[j]) > self.vel_limits[j]:
-        #         des_vel[j] = des_vel[j]/abs(des_vel[j]) * self.vel_limits[j]
-
-        max_vel = 0.75
         for j in range(self.arm_dof):
-            if abs(des_vel[j]) > max_vel:
-                des_vel[j] = des_vel[j]/abs(des_vel[j]) * max_vel
+            if abs(des_vel[j]) > self.vel_limits[j]:
+                des_vel[j] = des_vel[j]/abs(des_vel[j]) * self.vel_limits[j]
 
         rospy.loginfo('Filtered Desired Velocity: {}'.format(des_vel))
 
@@ -314,8 +301,8 @@ class JointMotionControl_StateDependent(object):
         """
         p = 6
 
-        restr_minPos = 0.99*np.array(ur10_minPos)
-        restr_maxPos = 0.99*np.array(ur10_maxPos)
+        restr_minPos = 0.99*np.array(panda_minPos)
+        restr_maxPos = 0.99*np.array(panda_maxPos)
 
         # Add range of motion restrictions
         if self.position[1]<-PI/2.0 and des_vel_dir[1] > 0: 
@@ -366,8 +353,8 @@ class JointMotionControl_StateDependent(object):
             self.desired_velocity[j] = des_vel[j]
 
         # Publish command to robot
-        self.Vel_msg.data  = self.desired_velocity
-        self._pub_vel.publish(self.Vel_msg)
+        self.pubmsg.velocity = self.desired_velocity        
+        self._pub.publish(self.pubmsg)
 
         # Uncomment if you want to see the desired joint velocities sent to the robot        
         rospy.loginfo('Desired joint velocity: {}'.format(self.desired_velocity))
