@@ -1,0 +1,8 @@
+- git:
+    local-name: robot_math_tools
+    uri: https://github.com/nbfigueroa-rlic/robot_math_tools.git
+
+- git:
+    local-name: robot_kinematics
+    uri: https://github.com/nbfigueroa-rlic/robot_kinematics.git
+
