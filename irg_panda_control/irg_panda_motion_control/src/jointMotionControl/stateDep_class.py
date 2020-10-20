@@ -70,9 +70,13 @@ class JointMotionControl_StateDependent(object):
         self.arm_dof          = len(arm_joint_names)
 
         # Create JointCommand message to publish commands
-        self.pubmsg       = JointCommand()
-        self.pubmsg.names = arm_joint_names # names of joints (has to be 7 and in the same order as the command fields (positions, velocities, efforts))
-        self.pubmsg.mode  = self.pubmsg.VELOCITY_MODE # Specify control mode (POSITION_MODE, VELOCITY_MODE, IMPEDANCE_MODE (not available in sim), TORQUE_MODE
+        self.cmd_type      = cmd_type
+        self.pubmsg        = JointCommand()
+        self.pubmsg.names  = arm_joint_names # names of joints (has to be 7 and in the same order as the command fields (positions, velocities, efforts))
+        if self.cmd_type == 1:
+            self.pubmsg.mode  = self.pubmsg.VELOCITY_MODE # Specify control mode (POSITION_MODE, VELOCITY_MODE, IMPEDANCE_MODE (not available in sim), TORQUE_MODE
+        elif self.cmd_type == 2:
+            self.pubmsg.mode  = self.pubmsg.POSITION_MODE
 
         # Robot Jacobian and EE representations
         self.jacobian           = []
@@ -82,7 +86,8 @@ class JointMotionControl_StateDependent(object):
         self.ee_quat            = []
         
         # Control Variables
-        self.desired_velocity   = [0,0,0,0,0,0]
+        self.desired_velocity   = [0,0,0,0,0,0,0]
+        self.desired_position   = [0,0,0,0,0,0,0]
         self.vel_limits         = np.array(panda_maxVel)
         self.add_nullspace      = 0
 
@@ -136,8 +141,8 @@ class JointMotionControl_StateDependent(object):
         if self.DS_type == 2:
             rospy.loginfo('DS position attractor: {}'.format(self.DS_pos_att))
             rospy.loginfo('Null-Space target: {}'.format(self.null_space))
-        if len(self.DS_attractor) == 7:
-            rospy.loginfo('DS quaternion attractor: {}'.format(self.DS_quat_att))
+            if len(self.DS_attractor) == 7:
+                rospy.loginfo('DS quaternion attractor: {}'.format(self.DS_quat_att))
 
         # Generic DS parameters    
         rospy.loginfo('DS system matrix A:\n {}'.format(self.A))
@@ -152,7 +157,7 @@ class JointMotionControl_StateDependent(object):
         """
         self._populate_joint_state(msg)   
         # Uncomment if you want to see the current states         
-        # rospy.loginfo('Current joint position: {}'.format(self.position))
+        rospy.loginfo('Current joint position: {}'.format(self.position))
         # rospy.loginfo('Current joint velocity: {}'.format(self.velocity))    
 
     def _populate_joint_state(self, msg):
@@ -180,7 +185,7 @@ class JointMotionControl_StateDependent(object):
             self.pos_error  = LA.norm(joint_error)
             # Compute Desired Velocity
             des_vel = -self.A.dot(joint_error)
-            # des_vel = 1.5*des_vel_/LA.norm(des_vel_)
+            # des_vel = 2.0*des_vel_/LA.norm(des_vel_)
             # des_vel = np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
 
         if self.DS_type == 2:
@@ -243,10 +248,10 @@ class JointMotionControl_StateDependent(object):
 
         rospy.loginfo('Raw Desired Velocity: {}'.format(des_vel))
 
-        # Cap joint velocities with velocity limits        
+        # # Cap joint velocities with velocity limits        
         for j in range(self.arm_dof):
-            if abs(des_vel[j]) > self.vel_limits[j]:
-                des_vel[j] = des_vel[j]/abs(des_vel[j]) * self.vel_limits[j]
+            if abs(des_vel[j]) > (0.9*self.vel_limits[j]):
+                des_vel[j] = (des_vel[j]/abs(des_vel[j])) * 0.90 * self.vel_limits[j]
 
         rospy.loginfo('Filtered Desired Velocity: {}'.format(des_vel))
 
@@ -338,11 +343,9 @@ class JointMotionControl_StateDependent(object):
                 # Publish desired joint-velocities 
                 self._publish_desired_velocities(des_vel) 
 
-            if self.cmd_type == 2:
-                # Integrate desired velocities to positions
-                des_pos = self._compute_desired_positions(des_vel)                
+            if self.cmd_type == 2:           
                 # Publish desired joint-positions
-                self._publish_desired_positions(des_pos) 
+                self._publish_desired_positions(des_vel) 
 
     
     def _publish_desired_velocities(self, des_vel):
@@ -358,6 +361,21 @@ class JointMotionControl_StateDependent(object):
 
         # Uncomment if you want to see the desired joint velocities sent to the robot        
         rospy.loginfo('Desired joint velocity: {}'.format(self.desired_velocity))
+
+
+    def _publish_desired_positions(self, des_vel):
+        """
+            Convert numpy array to Float64MultiArray and publish
+        """        
+        for j in range(self.arm_dof):
+            self.desired_position[j] = self.position[j] + des_vel[j]*5*self.dt
+
+        # Publish command to robot
+        self.pubmsg.position = self.desired_position        
+        self._pub.publish(self.pubmsg)
+
+        # Uncomment if you want to see the desired joint velocities sent to the robot        
+        rospy.loginfo('Desired joint velocity: {}'.format(self.desired_position))
 
 
     def run(self): 
@@ -377,15 +395,12 @@ class JointMotionControl_StateDependent(object):
             des_vel = self._compute_desired_velocities()              
 
             #### Send control commands to robot arm ####
-            # if self.cmd_type == 1:                
-            # Publish desired joint-velocities 
-            self._publish_desired_velocities(des_vel) 
-
-            # if self.cmd_type == 2:
-            #     # Integrate desired velocities to positions
-            #     des_pos = self._compute_desired_positions(des_vel)                
-            #     # Publish desired joint-positions
-            #     self._publish_desired_positions(des_pos) 
+            if self.cmd_type == 1:                
+                # Publish desired joint-velocities 
+                self._publish_desired_velocities(des_vel) 
+            elif self.cmd_type == 2:                
+                # Integrate desired velocities to positions and publish desired joint-positions
+                self._publish_desired_positions(des_vel) 
 
             # Publish desired command for visualization and debugging purposes
             # self._publish_jointspace_command()
@@ -408,7 +423,7 @@ class JointMotionControl_StateDependent(object):
                 # Send 0 velocities when target reached!                
                 if self.cmd_type == 1:                
                     for ii in range(10):           
-                        self._publish_desired_velocities(np.array([0, 0, 0, 0, 0, 0 ]))
+                        self._publish_desired_velocities(np.array([0, 0, 0, 0, 0, 0, 0]))
 
                 tF = time.time() - t0
                 rospy.loginfo('Final Execution time: {}'.format(tF))

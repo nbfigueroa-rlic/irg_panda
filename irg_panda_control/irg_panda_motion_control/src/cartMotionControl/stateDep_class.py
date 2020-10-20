@@ -25,6 +25,7 @@ class CartesianMotionControl_StateDependent(object):
         # Subscribe to current joint state (position, velocity, effort)
         self._sub       = rospy.Subscriber('/joint_states', JointState, self._joint_states_cb)
         self._sub_pose  = rospy.Subscriber('/cobot/ee_pose', Pose, self._ee_pose_cb)
+        
         # Publishes the current EE pose (from FK of joint-states)
         # self._pub_pose    = rospy.Publisher('/UR10arm/ee_pose', Pose, queue_size=10)                
         

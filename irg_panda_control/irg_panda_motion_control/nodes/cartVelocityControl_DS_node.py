@@ -56,7 +56,7 @@ if __name__ == '__main__':
     epsilon = 0.0075
          
     ####### Motion Control Variables #######
-    ctrl_rate  = 150 # 150hz
+    ctrl_rate  = 1000 # 150hz
     
     ####### Initialize Class #######
     cartVelocityController = CartesianMotionControl_StateDependent(DS_type, A_p, A_o, DS_attractor, ctrl_rate, epsilon)
