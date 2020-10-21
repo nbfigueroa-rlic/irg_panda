@@ -62,19 +62,22 @@ int main( int argc, char** argv )
             geometry_msgs::Point p;
             p.x = x;
             p.y = y;
-            p.z = z;
-            sphere_list.points.push_back(p);
-
+            p.z = z;            
 
             std_msgs::ColorRGBA c;      
             // Set all the free space  
-            c.r = 1.0;
-            c.g = 0.0;
+            c.r = 0.0;
+            c.g = 1.0;
+            c.b = 0.0;
+            c.a = 0.01;
 
             // The table Top
-            if (z > 0.625){
-                c.r = 0.0;
-                c.g = 1.0;              
+            if (z < 0.625){
+                c.r = 1.0;
+                c.g = 0.0;              
+                c.a = 0.075;
+                // sphere_list.points.push_back(p);
+                // sphere_list.colors.push_back(c);                      
             }
             // The vertical wall
             if (x>= 0.3){
@@ -82,6 +85,9 @@ int main( int argc, char** argv )
                 if (z >= 0.625 && z <= 1.025){
                   c.r = 1.0;
                   c.g = 0.0;
+                  c.a = 0.075;
+                  // sphere_list.points.push_back(p);
+                  // sphere_list.colors.push_back(c);                        
                 }
               }
             }  
@@ -91,14 +97,14 @@ int main( int argc, char** argv )
                 if (z >= 1.025 && z <= 1.065){
                   c.r = 1.0;
                   c.g = 0.0;
+                  c.a = 0.075;
+                  // sphere_list.points.push_back(p);
+                  // sphere_list.colors.push_back(c);      
                 }
               }
-            } 
-
-            c.b = 0.0;
-            c.a = 0.05;
-            sphere_list.colors.push_back(c);
-
+            }         
+            sphere_list.points.push_back(p);
+            sphere_list.colors.push_back(c);      
             } 
         }
     }

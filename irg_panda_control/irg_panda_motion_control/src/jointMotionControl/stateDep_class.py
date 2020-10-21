@@ -1,21 +1,23 @@
 from __future__ import print_function
 import rospy, math, time
 from sensor_msgs.msg import JointState
-from franka_core_msgs.msg import JointCommand, RobotState
 from std_msgs.msg    import Float64MultiArray
+from geometry_msgs.msg import PointStamped
 import numpy as np
 from   numpy import linalg as LA
 import modern_robotics as mr
 
-# To get Jacobian and FW kinematics (much faster.. 0.5ms for FK and 0.6ms for Jacobian)
-from generic_kinematics_model.kinematics import Kinematics
-
 # To compute orientation error in quaternion representation
 import pyquaternion as pyQuat
 Quaternion = pyQuat.Quaternion
+import quaternion
 
-from franka_core_msgs.msg import JointCommand, RobotState
+
+from franka_core_msgs.msg import JointCommand, RobotState, EndPointState
 import numpy as np
+
+# To visualize target if using JTDS
+from visualization_msgs.msg import Marker, MarkerArray
 
 # Globally defined variables
 PI = math.pi
@@ -30,10 +32,10 @@ panda_maxVel   = [2.1750, 2.1750, 2.1750, 2.1750, 2.6100, 2.6100, 2.6100]
 panda_maxAcc   = [15, 7.5, 10, 12.5, 15, 20, 20]
 
 # DH Parameters for Kinematics Class
-panda_DH_a      = [0.0, 0.0, 0.0, 0.0825, -0.0825, 0.0, 0.088]
-panda_DH_d      = [0.333, 0.0, 0.316, 0.0, 0.384, 0.0, 0.0, 0.107]
-panda_DH_alpha  = [0.0, -PI/2.0, PI/2.0, PI/2.0, -PI/2.0, PI/2.0, PI/2.0 ]
-panda_DH_theta0 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+panda_DH_a      = [0.0,   0.0,     0.0,     0.0825, -0.0825, 0.0,    0.088]
+panda_DH_d      = [0.333, 0.0,     0.316,   0.0,     0.384,  0.0,    0.0]
+panda_DH_alpha  = [0.0,   -PI/2.0, PI/2.0,  PI/2.0, -PI/2.0, PI/2.0, PI/2.0 ]
+panda_DH_theta0 = [0.0,   0.0,     0.0,     0.0,     0.0,    0.0,    0.0]
 
 # Relative pose between world and arm-base
 T_base_rel = np.array([  [1,  0,  0, 0],
@@ -41,9 +43,10 @@ T_base_rel = np.array([  [1,  0,  0, 0],
                          [0,  0,  1,  0.625],
                           [0, 0, 0, 1]])
 
+
 T_ee_panda   = np.array([[1, 0, 0, 0], 
-                         [0, 1, 0, 0],
-                         [0, 0, 1, 0],
+                         [0 , 1 , 0, 0],
+                         [0, 0, 1, 0.058],
                          [0, 0, 0, 1]])
 
 class JointMotionControl_StateDependent(object):
@@ -54,14 +57,27 @@ class JointMotionControl_StateDependent(object):
     def __init__(self, DS_type = 1, A = [0.0] * 7, DS_attractor = [0.0] * 7, ctrl_rate = 1000, cmd_type = 1, epsilon = 0.005, vel_limits = panda_maxVel, null_space = [0.0] * 7):
 
         # Subscribe to robot joint state
-        self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, self._joint_states_cb)
-
-        # Subscribe to robot state (Refer JointState.msg to find all available data. 
-        # Note: All msg fields are not populated when using the simulated environment)
-        # self._sub_rs = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/robot_state', RobotState, self._robot_states_cb)
+        self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, 
+            self._joint_states_cb,
+            queue_size=1,tcp_nodelay=True)
         
+        # if not using franka_ros_interface, you have to subscribe to the right topics
+        # to obtain the current end-effector state and robot jacobian for computing 
+        # commands
+        self._sub_cart_state = rospy.Subscriber('panda_simulator/custom_franka_state_controller/tip_state', EndPointState, 
+            self._on_endpoint_state, 
+            queue_size=1,tcp_nodelay=True)
+
+        self._sub_robot_state = rospy.Subscriber('panda_simulator/custom_franka_state_controller/robot_state',RobotState,
+            self._on_robot_state,
+            queue_size=1,tcp_nodelay=True)
+    
+
         # Published joint command
         self._pub = rospy.Publisher('/panda_simulator/motion_controller/arm/joint_commands',JointCommand, queue_size = 1, tcp_nodelay = True)
+        self.DS_type       = DS_type
+        if self.DS_type == 2:
+            self._pub_target = rospy.Publisher('DS_target', PointStamped)
 
         # Robot state
         self.arm_joint_names  = []
@@ -84,6 +100,8 @@ class JointMotionControl_StateDependent(object):
         self.ee_pos             = []
         self.ee_rot             = []
         self.ee_quat            = []
+        self.ee_lin_vel         = []
+        self.ee_ang_vel         = []
         
         # Control Variables
         self.desired_velocity   = [0,0,0,0,0,0,0]
@@ -92,8 +110,7 @@ class JointMotionControl_StateDependent(object):
         self.add_nullspace      = 0
 
         # Variables for DS-Motion Generator
-        self.dt            = 1.0/float(ctrl_rate)        
-        self.DS_type       = DS_type
+        self.dt            = 1.0/float(ctrl_rate)                
         self.DS_attractor  = np.array(DS_attractor)        
         self.rate          = rospy.Rate(ctrl_rate)
         self.A             = np.array(A)        
@@ -101,8 +118,7 @@ class JointMotionControl_StateDependent(object):
         self.pos_error     = 0
         self.quat_error    = 0     
         self._stop         = 0 
-        self.force_limits  = 1
-        self.good_config   = 0
+        self.force_limits  = 0
 
         # Spin once to update robot state
         first_msg = rospy.wait_for_message('/joint_states', JointState)
@@ -118,16 +134,6 @@ class JointMotionControl_StateDependent(object):
                 self.attr_type = 'full'    
                 self.DS_quat_att = self.DS_attractor[3:7]    
 
-            # Initialize Arm Kinematics-Chain Class for FK and Jacobian Computation
-            self.arm_kinematics = Kinematics(self.arm_dof)
-            for i in range(self.arm_dof):
-                self.arm_kinematics.setDH(i, panda_DH_a[i], panda_DH_d[i], panda_DH_alpha[i], panda_DH_theta0[i], 1, panda_minPos[i], panda_maxPos[i], panda_maxVel[i])
-            self.T_base        = T_base_rel
-            self.arm_kinematics.setT0(self.T_base)
-            self.arm_kinematics.setTF(T_ee_panda)
-            self.arm_kinematics.readyForKinematics()
-            self._forwardKinematics()
-            self._computeJacobian()
             self.add_nullspace = 0
             self.null_space    = np.array(null_space)    
             self.S_limits      = np.identity(self.arm_dof)            
@@ -170,6 +176,57 @@ class JointMotionControl_StateDependent(object):
             self.position[i] = msg.position[matched_idx]
             self.velocity[i] = msg.velocity[matched_idx]
 
+    def _on_robot_state(self, msg):
+        """
+            Callback function for updating jacobian and EE velocity from robot state
+        """
+        # global JACOBIAN, CARTESIAN_VEL
+        self.jacobian = np.asarray(msg.O_Jac_EE).reshape(6,7,order = 'F')
+        # CARTESIAN_VEL = {'linear': np.asarray([msg.O_dP_EE[0], msg.O_dP_EE[1], msg.O_dP_EE[2]]),
+        #                 'angular': np.asarray([msg.O_dP_EE[3], msg.O_dP_EE[4], msg.O_dP_EE[5]]) }
+        self.ee_lin_vel =  np.asarray([msg.O_dP_EE[0], msg.O_dP_EE[1], msg.O_dP_EE[2]])
+        self.ee_ang_vel =  np.asarray([msg.O_dP_EE[3], msg.O_dP_EE[4], msg.O_dP_EE[5]])
+
+    def _on_endpoint_state(self, msg):
+        """
+            Callback function to get current end-point state
+        """
+        # pose message received is a vectorised column major transformation matrix
+        cart_pose_trans_mat = np.asarray(msg.O_T_EE).reshape(4,4,order='F')
+        # CARTESIAN_POSE = {
+        #     'position': cart_pose_trans_mat[:3,3],
+        #     'orientation': quaternion.from_rotation_matrix(cart_pose_trans_mat[:3,:3]) }
+        
+        self.ee_pose = np.dot(np.dot(T_base_rel,cart_pose_trans_mat),T_ee_panda)
+        self.ee_pos  = self.ee_pose[0:3,3]
+
+        # self.ee_rot  = np.array([self.ee_pose[0,0:3], self.ee_pose[1,0:3], self.ee_pose[2,0:3]])
+        self.ee_rot  = cart_pose_trans_mat[:3,:3]
+        # self.ee_quat = quaternion.from_rotation_matrix(self.ee_rot)
+        self.ee_quat = Quaternion(matrix=self.ee_rot)
+
+        # rospy.loginfo('\nCurrent ee-pos:\n {}'.format(self.ee_pos))
+        # rospy.loginfo('\nCurrent ee-quat:\n {}'.format(self.ee_quat))
+
+        # Might not be necessary
+        # if len(self.DS_attractor) == 7:
+        #     # Adjust quaternion signs for antipodal issues
+        #     if self.DS_type == 2:
+        #         switch_sign = 0
+        #         if self.DS_quat_att[3] > 0:
+        #             if self.ee_quat.elements[0] < 0:
+        #                 switch_sign = 1
+
+        #         if self.DS_quat_att[3] < 0:
+        #             if self.ee_quat.elements[0] > 0:
+        #                 switch_sign = 1
+
+        #         if switch_sign == 1:
+        #             for i in range(4):
+        #                 self.ee_quat[i] = -self.ee_quat[i]
+
+
+
     def _compute_desired_velocities(self):
         """
             Compute desired joint velocities from state-dependent DS
@@ -189,14 +246,13 @@ class JointMotionControl_StateDependent(object):
             # des_vel = np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
 
         if self.DS_type == 2:
-            # Compute Forward Kinematics and Jacobian for JT-DS
-            self._forwardKinematics()        
-            self._computeJacobian()
+            # Compute Forward Kinematics and Jacobian for JT-DS --> Not necessary if given by 
 
             # JTDS to track task-space target
             if self.attr_type == 'pos':
                 # position only
                 task_error = self.ee_pos - self.DS_pos_att    
+                self.pos_error  = LA.norm(task_error)
 
             elif self.attr_type == 'full':
                 # position + orientation 
@@ -214,7 +270,7 @@ class JointMotionControl_StateDependent(object):
                 delta_log         = Quaternion.log(delta_quat) 
                 delta_log_        = np.array([delta_log.elements[1], delta_log.elements[2], delta_log.elements[3]])
                 self.quat_error   = LA.norm(delta_log_)
-                task_error[3:6]   = delta_log_
+                task_error[3:6]   = 0.5*delta_log_
 
             J_T          = np.transpose(self.jacobian)            
             joint_error  = J_T.dot(task_error)
@@ -257,54 +313,11 @@ class JointMotionControl_StateDependent(object):
 
         return des_vel
 
-    def _computeJacobian(self):
-        """
-            Computes spatial/geometric Jacobian matrix of current joint position
-        """
-        # Compute Forward Kinematics from current joint state  
-        if self.attr_type == 'pos':
-            self.jacobian = self.arm_kinematics.getJacobianPos() 
-        elif self.attr_type == 'full':
-            self.jacobian = self.arm_kinematics.getJacobian()        
-
-    def _forwardKinematics(self):
-        """
-            Computes forward kinematics of current joint position
-        """
-        # Convert to desired format for Kinematics() class   
-        np_query_joint_pos = np.zeros((self.arm_dof, 1))
-        for j in range(self.arm_dof):
-            np_query_joint_pos[j,0] = self.position[j]
-        self.arm_kinematics.setJoints(np_query_joint_pos, 1)
-        
-        # Compute Forward Kinematics from current joint state  
-        self.ee_pose = self.arm_kinematics.getEndTMatrix()        
-
-        # rospy.loginfo('\nCurrent ee-pose:\n {}'.format(self.ee_pose))
-        self.ee_pos  = self.ee_pose[0:3,3]
-        self.ee_rot  = np.array([self.ee_pose[0,0:3], self.ee_pose[1,0:3], self.ee_pose[2,0:3]])
-        self.ee_quat = Quaternion(matrix=self.ee_rot)
-
-        # Adjust quaternion signs for antipodal issues
-        if self.DS_type == 2:
-            switch_sign = 0
-            if self.DS_quat_att[3] > 0:
-                if self.ee_quat.elements[0] < 0:
-                    switch_sign = 1
-
-            if self.DS_quat_att[3] < 0:
-                if self.ee_quat.elements[0] > 0:
-                    switch_sign = 1
-
-            if switch_sign == 1:
-                for i in range(4):
-                    self.ee_quat[i] = -self.ee_quat[i]
-
     def _compute_Slimits(self, des_vel_dir):
         """
             Computes S matrix for joint limits (restricted range of motion)
         """
-        p = 6
+        p = 7
 
         restr_minPos = 0.99*np.array(panda_minPos)
         restr_maxPos = 0.99*np.array(panda_maxPos)
@@ -322,31 +335,6 @@ class JointMotionControl_StateDependent(object):
             self.S_limits[j,j] = abs(1 - pow(2*q_ratio-1,2*p))
         
         # rospy.loginfo('S limits matrix: {}'.format(self.S_limits))            
-
-    def _moveto_working_range(self):
-        """
-            If robot is out of the desired working range of motion
-        """
-    
-        rospy.loginfo('Moving robot to good init config...')  
-        shoulder_limit = -PI/4
-        elbow_limit    = PI/2
-        wrist_limit    = -2.303    
-
-        while self.position[1] > shoulder_limit*0.9 and self.position[2] < elbow_limit*0.9:
-            des_vel = np.array([0.0]*6)
-            des_vel[1] = -5*(self.position[1] - shoulder_limit)
-            des_vel[2] = -5*(self.position[2] - elbow_limit)
-            des_vel[3] = -5*(self.position[3] - wrist_limit)
-
-            if self.cmd_type == 1:                
-                # Publish desired joint-velocities 
-                self._publish_desired_velocities(des_vel) 
-
-            if self.cmd_type == 2:           
-                # Publish desired joint-positions
-                self._publish_desired_positions(des_vel) 
-
     
     def _publish_desired_velocities(self, des_vel):
         """
@@ -377,17 +365,22 @@ class JointMotionControl_StateDependent(object):
         # Uncomment if you want to see the desired joint velocities sent to the robot        
         rospy.loginfo('Desired joint velocity: {}'.format(self.desired_position))
 
+    def _publish_DS_target(self):
+           p = PointStamped()
+           p.header.frame_id = "/world"
+           p.header.stamp = rospy.Time.now()
+           
+           p.point.x = self.DS_pos_att[0]
+           p.point.y = self.DS_pos_att[1]
+           p.point.z = self.DS_pos_att[2]
+
+           self._pub_target.publish( p )
+
 
     def run(self): 
         """
             The actual control-loop that sends commands (position/velocity) to the robot arm
         """ 
-       
-        # Check if robot is out of working range and move it there
-        if self.DS_type == 2:
-            self._moveto_working_range()        
-            rospy.loginfo('***** Ready to start DS motion generation! *****') 
-        
 
         t0 = time.time()
         while not rospy.is_shutdown() and not self._stop:
@@ -402,15 +395,15 @@ class JointMotionControl_StateDependent(object):
                 # Integrate desired velocities to positions and publish desired joint-positions
                 self._publish_desired_positions(des_vel) 
 
-            # Publish desired command for visualization and debugging purposes
-            # self._publish_jointspace_command()
-
             #### Compute error to target [Comment if you don't want to see this] ####
             if self.DS_type == 1:
                 rospy.loginfo('Distance to target: {}'.format(self.pos_error))
             else: 
+                rospy.loginfo('\nDesired ee-pos:\n {}'.format(self.DS_pos_att))
+                # rospy.loginfo('\nCurrent ee-pos:\n {}'.format(self.ee_pos))
                 rospy.loginfo('Distance to pos-target: {}'.format(self.pos_error))
-                rospy.loginfo('Distance to quat-target: {}'.format(self.quat_error))                
+                rospy.loginfo('Distance to quat-target: {}'.format(self.quat_error))    
+                self._publish_DS_target()            
             
             reached = 0
             if  self.pos_error < self.epsilon:
