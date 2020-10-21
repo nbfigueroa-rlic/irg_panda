@@ -59,7 +59,7 @@ if __name__ == '__main__':
                    # 2: Joint positions  commanded to the robot
 
     ####### Motion Control Variables #######
-    ctrl_rate      = 1000 # 280hz = 3.555 ms
+    ctrl_rate      = 100 # 280hz = 3.555 ms
     
     ####### Initialize Class #######
     jointPositionController = JointMotionControl_StateDependent(DS_type, A, DS_attractor, ctrl_rate, cmd_type, epsilon)

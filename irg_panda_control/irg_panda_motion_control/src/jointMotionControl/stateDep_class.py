@@ -31,7 +31,7 @@ panda_minPos   = [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
 panda_maxVel   = [2.1750, 2.1750, 2.1750, 2.1750, 2.6100, 2.6100, 2.6100]
 panda_maxAcc   = [15, 7.5, 10, 12.5, 15, 20, 20]
 
-# DH Parameters for Kinematics Class
+# Modified DH Parameters!!! I think I need standard for the for Kinematics Class to work!
 panda_DH_a      = [0.0,   0.0,     0.0,     0.0825, -0.0825, 0.0,    0.088]
 panda_DH_d      = [0.333, 0.0,     0.316,   0.0,     0.384,  0.0,    0.0]
 panda_DH_alpha  = [0.0,   -PI/2.0, PI/2.0,  PI/2.0, -PI/2.0, PI/2.0, PI/2.0 ]
@@ -356,7 +356,7 @@ class JointMotionControl_StateDependent(object):
             Convert numpy array to Float64MultiArray and publish
         """        
         for j in range(self.arm_dof):
-            self.desired_position[j] = self.position[j] + des_vel[j]*5*self.dt
+            self.desired_position[j] = self.position[j] + des_vel[j]*self.dt
 
         # Publish command to robot
         self.pubmsg.position = self.desired_position        
