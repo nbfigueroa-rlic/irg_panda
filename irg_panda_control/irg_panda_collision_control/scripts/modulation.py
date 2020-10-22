@@ -2,8 +2,43 @@ import math, sys
 from matplotlib import pyplot as plt
 import numpy as np
 from sklearn.svm import SVR, SVC
-from obstacles import GammaCircle2D, GammaRectangle2D, GammaCross2D
+# from obstacles import GammaCircle2D, GammaRectangle2D, GammaCross2D
 import learn_gamma_fn
+import argparse, csv, json, random
+
+def sample_environment(csv_location = 'environment_descriptions/output.csv'):
+    """
+    A csv file containing environment descriptions should exist.
+    To make such a csv file, call generate_new_environments(...)
+    This function returns a random line from that CSV file
+    Parameters:
+        csv_location : string, corresponds to the location of the csv file
+    Returns:
+        n_obs : int, number of obstacles
+        start : list of form [x_s, y_s]
+        goal : list of form [x_g, y_g]
+        obstacle_descriptions : list, of form [ [r1, x1, y1], [r2, x2, y2], ... ]
+    """
+    # TODO: this can cause problems for large files
+    count = len(open(csv_location).readlines(  ))
+    random_environment_desc = random.randint(1, count)
+
+    row_idx = -1
+    # with open(csv_locaton, newline='') as csvfile:
+    with open(csv_location) as csvfile:         
+        csvreader = csv.reader(csvfile, delimiter=':')
+
+        for row in csvreader:
+            row_idx += 1
+            if row_idx == 0:
+                continue
+            if row_idx == random_environment_desc:
+                n_obs = int(row[0])
+                start = json.loads(row[1])
+                goal = json.loads(row[2])
+                obstacle_descriptions = json.loads(row[3])
+                return (n_obs, start, goal, obstacle_descriptions)
+
 
 def null_space_bases(n):
     '''construct a set of d-1 basis vectors orthogonal to the given d-dim vector n'''
@@ -49,12 +84,12 @@ def modulation_single_HBS_learned(x, normal_vec, gamma_pt, obstacle_reference_po
     es = null_space_bases(n)
     r =  x - obstacle_reference_points[0]
 
-    # # Search for nearest obstacle. Is this the right thing to do?
-    # dist_tmp = np.linalg.norm(x - obstacle_reference_points[0])
-    # for obs_ref_pt in obstacle_reference_points[1:]:
-    #     if np.linalg.norm(x - obs_ref_pt) < dist_tmp:
-    #         dist_tmp = np.linalg.norm(x - obs_ref_pt)
-    #         r = x - obs_ref_pt
+    # Search for nearest obstacle. Is this the right thing to do?
+    dist_tmp = np.linalg.norm(x - obstacle_reference_points[0])
+    for obs_ref_pt in obstacle_reference_points[1:]:
+        if np.linalg.norm(x - obs_ref_pt) < dist_tmp:
+            dist_tmp = np.linalg.norm(x - obs_ref_pt)
+            r = x - obs_ref_pt
     bases = [r] + es
     E = np.stack(bases).T
     E = E / np.linalg.norm(E, axis=0)
@@ -132,6 +167,7 @@ def modulation_HBS_learned(query_pt, orig_ds, gamma_vals, normal_vecs, obstacle_
     # calculate modulated dynamical system
     M = modulation_single_HBS_learned(x=query_pt, normal_vec=normal_vec, gamma_pt=gamma_pt, obstacle_reference_points=obstacle_reference_points)
     x_dot_mod = np.matmul(M, orig_ds.reshape(-1, 1)).flatten()
+    
     # calculate average magnitude
     avg_mag = np.linalg.norm(x_dot_mod)
 
@@ -223,18 +259,18 @@ def test_HBS_fixed_obs():
     plt.plot([x_target[0]], [x_target[1]], 'r*')
     # plt.savefig('../images/vector_field_HBS.png', bbox_inches='tight')
     plt.show()
-    
+
 def test_HBS_learned_obs():
     """
     """
-    desc_location = "environment_descriptions/tmp.txt"
-    n_obs, start, goal, obstacle_descriptions = sample_environment.sample_environment()
-    # sample_environment.draw_environment(start, goal, [0,50], [0,50], obstacle_descriptions, desc_location = desc_location)
+    desc_location = "../data/output.csv"
+    n_obs, start, goal, obstacle_descriptions = sample_environment(csv_location = desc_location)
 
     # scale from [-1,1] to our interval [0,50]
     start = np.add(start,1) * 25
     goal = np.add(goal,1) * 25
 
+    desc_location = "../data/tmp.txt"
     X, Y = learn_gamma_fn.read_data(desc_location)
     learned_obstacles = learn_gamma_fn.create_obstacles_from_data(data=X, label=Y, plot_raw_data=False)
 
@@ -253,8 +289,8 @@ def test_HBS_learned_obs():
     position = np.c_[xx.ravel(), yy.ravel()].T
 
     gamma_vals = learn_gamma_fn.get_gamma(position, classifier, max_dist)
-    # normal_vecs = learn_gamma_fn.get_normal_direction(position, classifier, max_dist)
-    normal_vecs = learn_gamma_fn.compute_derivatives(position, learned_obstacles)
+    normal_vecs = learn_gamma_fn.get_normal_direction(position, classifier, max_dist)
+    # normal_vecs = learn_gamma_fn.compute_derivatives(position, learned_obstacles)
 
     fig, ax = learn_gamma_fn.draw_contour_map(classifier, max_dist, gamma_value=True, normal_vecs=normal_vecs, show_vecs=False, show_plot=False)
 
@@ -300,5 +336,5 @@ def test_HBS_learned_obs():
     plt.show()
 
 if __name__ == '__main__':
-    # test_HBS_learned_obs()
-    test_HBS_fixed_obs()
+    test_HBS_learned_obs()
+    # test_HBS_fixed_obs()

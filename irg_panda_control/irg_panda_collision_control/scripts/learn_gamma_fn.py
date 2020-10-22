@@ -99,7 +99,7 @@ def get_gamma(position, classifier, max_dist, reference_point=(0,0)):
     dist = np.linalg.norm(position - np.tile(reference_point, (position.shape[1], 1)).T, axis=0)
 
     outer_ref_dist = max_dist*2
-    # dist = np.clip(dist, max_dist, outer_ref_dist)
+    dist = np.clip(dist, max_dist, outer_ref_dist)
 
     ind_noninf = outer_ref_dist > dist
     distance_score = (outer_ref_dist-max_dist)/(outer_ref_dist-dist[ind_noninf])
@@ -115,7 +115,7 @@ def get_gamma(position, classifier, max_dist, reference_point=(0,0)):
     return gamma
 
 
-def create_obstacles_from_data(data, label, cluster_eps=10, cluster_min_samples=10, label_free=0, label_obstacle=1, plot_raw_data=False):
+def create_obstacles_from_data(data, label, cluster_eps=1,  cluster_min_samples=3, label_free=0, label_obstacle=1, plot_raw_data=False):
     """
     Cite: https://github.com/epfl-lasa/dynamic_obstacle_avoidance_linear
 
@@ -163,12 +163,19 @@ def create_obstacles_from_data(data, label, cluster_eps=10, cluster_min_samples=
     learned_obstacles["gamma_svm"] = gamma_svm
     learned_obstacles["c_svm"] = c_svm
 
+    # # Predefined!
+    # n_obstacles = 3
+    # learned_obstacles[0] = {"reference_point": [1.5,29.3]}
+    # learned_obstacles[1] = {"reference_point": [20,48]}
+    # # learned_obstacles[2] = {"reference_point": [43,14]}
 
+    print('Number of Clusters', n_obstacles)
     for oo in range(n_obstacles):
         ind_clusters = (clusters.labels_==oo)
         obs_points.append(data_obs[:, ind_clusters])
         mean_position = np.mean(obs_points[-1], axis=1)
         learned_obstacles[oo] = {"reference_point": mean_position}
+
 
     return (learned_obstacles)
 
@@ -238,7 +245,8 @@ def read_data (file_location):
     X = [[],[]]
     Y = []
 
-    with open(file_location, newline='') as csvfile:
+    # with open(file_location, newline='') as csvfile:
+    with open(file_location) as csvfile:
         csvreader = csv.reader(csvfile, delimiter=',')
         header = True
         for row in csvreader:
@@ -254,7 +262,7 @@ def read_data (file_location):
         return (np.array(X), np.array(Y))
 
 if __name__ == '__main__':
-    X, Y = read_data("environment_descriptions/tmp.txt")
+    X, Y = read_data("../data/tmp.txt")
     learned_obstacles = create_obstacles_from_data(data=X, label=Y, plot_raw_data=True)
     classifier = learned_obstacles['classifier']
     max_dist = learned_obstacles['max_dist']
