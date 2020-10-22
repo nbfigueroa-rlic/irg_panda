@@ -289,8 +289,8 @@ def test_HBS_learned_obs():
     position = np.c_[xx.ravel(), yy.ravel()].T
 
     gamma_vals = learn_gamma_fn.get_gamma(position, classifier, max_dist)
-    normal_vecs = learn_gamma_fn.get_normal_direction(position, classifier, max_dist)
-    # normal_vecs = learn_gamma_fn.compute_derivatives(position, learned_obstacles)
+    # normal_vecs = learn_gamma_fn.get_normal_direction(position, classifier, max_dist)
+    normal_vecs = learn_gamma_fn.compute_derivatives(position, learned_obstacles)
 
     fig, ax = learn_gamma_fn.draw_contour_map(classifier, max_dist, gamma_value=True, normal_vecs=normal_vecs, show_vecs=False, show_plot=False)
 
