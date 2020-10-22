@@ -14,12 +14,13 @@ def rand_target_loc(np_random):
     # y = np_random.uniform(low=-0.3, high=0.2)
 
     # reference frames are different in gazebo and pybullet
-    y = np_random.uniform(low=0.05, high=0.5)
+    # y = np_random.uniform(low=0.05, high=0.5)
+    y = np_random.uniform(low=0.10, high=0.5)
     if np_random.randint(0, 2) == 0:
         y = -y
     
-    x = np_random.uniform(low = 0.3, high=0.8)
-    z = np_random.uniform(low=0.65,  high=1.0)
+    x = np_random.uniform(low = 0.3, high = 0.8)
+    z = np_random.uniform(low=0.65,  high = 0.975)
     return x, y, z
 
 # Global Variable
@@ -85,10 +86,11 @@ if __name__ == '__main__':
     epsilon = 0.025
          
     ####### Motion Control Variables #######
-    ctrl_rate  = 100 # 150hz
+    ctrl_rate   = 100 # 150hz
+    ctrl_orient = 0
     
     ####### Initialize Class #######
-    cartVelocityController = CartesianMotionControl_StateDependent(DS_type, A_p, A_o, DS_attractor, ctrl_rate, epsilon)
+    cartVelocityController = CartesianMotionControl_StateDependent(DS_type, A_p, A_o, DS_attractor, ctrl_rate, epsilon, ctrl_orient)
 
     ####### Run Control #######
     cartVelocityController.run()

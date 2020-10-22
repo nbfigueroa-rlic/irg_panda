@@ -2,16 +2,15 @@ from __future__ import print_function
 import rospy, math, time
 from sensor_msgs.msg import JointState
 from std_msgs.msg    import Float64MultiArray
-from geometry_msgs.msg import PointStamped, Twist
+from geometry_msgs.msg import Twist, Wrench, Vector3, PointStamped, WrenchStamped
 import numpy as np
 from   numpy import linalg as LA
-import modern_robotics as mr
+# import modern_robotics as mr
 
 # To compute orientation error in quaternion representation
 import pyquaternion as pyQuat
 Quaternion = pyQuat.Quaternion
-import quaternion
-
+# import quaternion
 
 from franka_core_msgs.msg import JointCommand, RobotState, EndPointState
 import numpy as np
@@ -53,7 +52,7 @@ class CartesianMotionControl_StateDependent(object):
     """
         This class sends desired twists (linear and angular velocity) to the 
     """
-    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005):
+    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005, ctrl_orient = 1):
 
         # Subscribe to robot joint state
         self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, 
@@ -72,9 +71,9 @@ class CartesianMotionControl_StateDependent(object):
             queue_size=1,tcp_nodelay=True)
     
         # ---Publishes twist command to filter node
-        self._pub_twist   = rospy.Publisher('/panda_simulator/desired_twist', Twist, queue_size=10)        
-        self._pub_target = rospy.Publisher('DS_target', PointStamped, queue_size=10)
-
+        self._pub_twist    = rospy.Publisher('/panda_simulator/desired_twist', Twist, queue_size=10)        
+        self._pub_target   = rospy.Publisher('DS_target', PointStamped, queue_size=10)
+        self._pub_wrench   = rospy.Publisher('/panda_simulator/desired_wrench', WrenchStamped, queue_size=10)
 
         # Robot state
         self.arm_joint_names  = []
@@ -93,12 +92,8 @@ class CartesianMotionControl_StateDependent(object):
             tcp_nodelay=True,
             queue_size=1)
 
+        self.control_orient = ctrl_orient
 
-        # if self.cmd_type == 1:
-        #     self.pubmsg.mode  = self.pubmsg.VELOCITY_MODE # Specify control mode (POSITION_MODE, VELOCITY_MODE, IMPEDANCE_MODE (not available in sim), TORQUE_MODE
-        # elif self.cmd_type == 2:
-        #     self.pubmsg.mode  = self.pubmsg.POSITION_MODE   
-        
         # Robot Jacobian and EE representations
         self.jacobian           = []
         self.ee_pose            = []
@@ -115,7 +110,15 @@ class CartesianMotionControl_StateDependent(object):
         self.twist_msg.linear.z  = 0
         self.twist_msg.angular.x = 0
         self.twist_msg.angular.y = 0
-        self.twist_msg.angular.z = 0        
+        self.twist_msg.angular.z = 0     
+
+        self.wrench_msg                  = WrenchStamped()
+        self.wrench_msg.wrench           = Wrench()
+        self.wrench_msg.wrench.force     = Vector3()
+        self.wrench_msg.wrench.torque    = Vector3()
+        # self.wrench_msg.header.frame_id  = '/panda_link7'
+        # self.wrench_msg.header.frame_id  = '/world_on_ee'
+        self.wrench_msg.header.stamp     = rospy.Time.now()
 
         # Control Variables
         self.desired_position   = [0,0,0,0,0,0]
@@ -305,10 +308,10 @@ class CartesianMotionControl_StateDependent(object):
             Computes desired task-space force using PD law
             """   
             # Truncate velocities if too high!
-            if LA.norm(lin_vel) > 0.75*self.max_lin_vel:
+            if LA.norm(lin_vel) > 0.9*self.max_lin_vel:
                     lin_vel = lin_vel/LA.norm(lin_vel) * self.max_lin_vel
 
-            if LA.norm(ang_vel) > 0.5*self.max_ang_vel:
+            if LA.norm(ang_vel) > 0.9*self.max_ang_vel:
                     ang_vel = ang_vel/LA.norm(ang_vel) * self.max_ang_vel
 
 
@@ -316,7 +319,7 @@ class CartesianMotionControl_StateDependent(object):
             # K_pos = 50.
             # K_ori = 25.
             K_pos = 100.
-            K_ori = 50.
+            K_ori = 100.
             # damping gains
             # D_pos = 10.
             # D_ori = 1.
@@ -341,12 +344,31 @@ class CartesianMotionControl_StateDependent(object):
             rospy.loginfo('Orientation Error: {}'.format(delta_ori))
 
             # Desired task-space force using PD law
-            F_ee = np.vstack([K_pos*(delta_pos), K_ori*(delta_ori)]) - \
-            np.vstack([D_pos*(delta_lin_vel), D_ori*(self.ee_ang_vel.reshape([3,1]))])
+            if self.control_orient:
+                F_ee = np.vstack([K_pos*(delta_pos), K_ori*(delta_ori)]) - \
+                np.vstack([D_pos*(delta_lin_vel), D_ori*(self.ee_ang_vel.reshape([3,1]))])
+            else:     
+                F_ee = np.vstack([K_pos*(delta_pos), np.array([0,0,0]).reshape([3,1])]) - \
+                np.vstack([D_pos*(delta_lin_vel), np.array([0,0,0]).reshape([3,1])])
+
 
             rospy.loginfo('Desired Wrench: {}'.format(F_ee))
             return F_ee
 
+
+    def _publish_desired_wrench(self, lin_vel, ang_vel):
+
+            # lin_vel_rot = self.ee_rot.dot(np.array(lin_vel))
+
+            self.wrench_msg.wrench.force.x = lin_vel[0]
+            self.wrench_msg.wrench.force.y = lin_vel[1]
+            self.wrench_msg.wrench.force.z = lin_vel[2]
+
+            self.wrench_msg.wrench.torque.x = ang_vel[0]
+            self.wrench_msg.wrench.torque.y = ang_vel[1]
+            self.wrench_msg.wrench.torque.z = ang_vel[2]
+
+            self._pub_wrench.publish(self.wrench_msg)        
 
     def _publish_torque_commands(self, F_ee):            
             # joint torques to be commanded
@@ -371,9 +393,10 @@ class CartesianMotionControl_StateDependent(object):
             # Publish desired twist
             self._publish_desired_twist(lin_vel, ang_vel) 
             self._publish_DS_target()
+            # self._publish_desired_wrench(lin_vel, ang_vel)
 
             # Compute desired velocities from DS
-            F_ee = self._compute_desired_wrench(lin_vel, ang_vel)              
+            F_ee = self._compute_desired_wrench(lin_vel, ang_vel)                       
             self._publish_torque_commands(F_ee)               
 
             #### Compute error to target [Comment if you don't want to see this] ####
@@ -381,8 +404,14 @@ class CartesianMotionControl_StateDependent(object):
             rospy.loginfo('Distance to quat-target: {}'.format(self.quat_error))                
             
             
-            if  (self.pos_error < self.epsilon) and (self.quat_error < 2*self.epsilon):
-                reached = 1
+            if self.control_orient:
+                if(self.pos_error < self.epsilon) and (self.quat_error < 2*self.epsilon):
+                    reached = 1
+            else:
+                if(self.pos_error < self.epsilon):
+                    reached = 1
+
+            if reached == 1:
                 tF = time.time() - t0     
                 # Send 0 velocities when target reached!                
                 for ii in range(10):           
@@ -392,6 +421,7 @@ class CartesianMotionControl_StateDependent(object):
                 rospy.loginfo('**** Target Reached! ****')
                 rospy.signal_shutdown('Reached target') 
                 break        
+
 
             # Control-loop rate
             self.rate.sleep()

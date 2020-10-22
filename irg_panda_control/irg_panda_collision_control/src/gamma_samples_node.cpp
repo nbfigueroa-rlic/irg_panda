@@ -47,9 +47,6 @@ int main( int argc, char** argv )
     sphere_list.scale.x = 0.01;
     sphere_list.scale.y = 0.01;
     sphere_list.scale.z = 0.01;
-    // sphere_list.color.r = 1.0f;
-    // sphere_list.color.a = 0.5f;
-
 
     for (uint32_t k = 0; k < grid_size; ++k){
       float z =  z_stacks[k];
@@ -76,30 +73,27 @@ int main( int argc, char** argv )
                 c.r = 1.0;
                 c.g = 0.0;              
                 c.a = 0.075;
-                // sphere_list.points.push_back(p);
-                // sphere_list.colors.push_back(c);                      
             }
             // The vertical wall
             if (x>= 0.3){
-              if (y>=-0.02 && y<=0.02){
+              // if (y>=-0.02 && y<=0.02){
+               if (y>=-0.04 && y<=0.04){// Adding 2cm no the sides (to account for gripper)
                 if (z >= 0.625 && z <= 1.025){
                   c.r = 1.0;
                   c.g = 0.0;
                   c.a = 0.075;
-                  // sphere_list.points.push_back(p);
-                  // sphere_list.colors.push_back(c);                        
                 }
               }
             }  
             // The horizontal wall
             if (x>= 0.3){
-              if (y>=-0.4 && y<=0.4){
-                if (z >= 1.025 && z <= 1.065){
+              // if (y>=-0.4 && y<=0.4){
+              if (y>=-0.45 && y<=0.45){ // Adding 5cm no the sides (to account for gripper)
+                // if (z >= 1.025 && z <= 1.065){
+                  if (z >= 0.975 && z <= 1.065){ // Adding 5cm below the wall (to account for gripper)
                   c.r = 1.0;
                   c.g = 0.0;
                   c.a = 0.075;
-                  // sphere_list.points.push_back(p);
-                  // sphere_list.colors.push_back(c);      
                 }
               }
             }         

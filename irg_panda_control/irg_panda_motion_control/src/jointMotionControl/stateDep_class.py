@@ -208,7 +208,7 @@ class JointMotionControl_StateDependent(object):
         # rospy.loginfo('\nCurrent ee-pos:\n {}'.format(self.ee_pos))
         # rospy.loginfo('\nCurrent ee-quat:\n {}'.format(self.ee_quat))
 
-        # Might not be necessary
+        # This might not be necessary
         # if len(self.DS_attractor) == 7:
         #     # Adjust quaternion signs for antipodal issues
         #     if self.DS_type == 2:
