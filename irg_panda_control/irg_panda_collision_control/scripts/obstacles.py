@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 a collection of different obstacles, represented via gamma function
 '''
 
-import torch, math
+# import torch, math
+import math
 import numpy as np
 
 class Gamma(object):
