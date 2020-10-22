@@ -6,9 +6,9 @@ import rbf_2d_env
 
 from sklearn.svm import SVR, SVC
 
-sys.path.append("environment_generation/")
+# sys.path.append("environment_generation/")
 from obstacles import GammaCircle2D, GammaRectangle2D, GammaCross2D
-import sample_environment
+# import sample_environment
 import learn_gamma_fn
 
 from numpy import random as np_random
