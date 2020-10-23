@@ -39,7 +39,8 @@ if __name__ == '__main__':
                                                  # 2: Joint-space DS with task-space target  (JT-DS)
     
     #  Selected goal in joint space #
-    goal       = rospy.get_param('~goal', 1)   
+    goal        = rospy.get_param('~goal', 1)   
+    ctrl_orient = rospy.get_param('~ctrl_orient', 1)   
 
     # control for position + orientation
     # DS_attractor= [x, y, z, q_x, q_y, q_z, q_w]
@@ -87,7 +88,7 @@ if __name__ == '__main__':
          
     ####### Motion Control Variables #######
     ctrl_rate   = 100 # 150hz
-    ctrl_orient = 0
+    # ctrl_orient = 0
     
     ####### Initialize Class #######
     cartVelocityController = CartesianMotionControl_StateDependent(DS_type, A_p, A_o, DS_attractor, ctrl_rate, epsilon, ctrl_orient)

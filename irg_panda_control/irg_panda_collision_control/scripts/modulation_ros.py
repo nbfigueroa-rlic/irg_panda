@@ -1,8 +1,8 @@
 import math, sys
 from matplotlib import pyplot as plt
 import numpy as np
-import svm_2d_env
-import rbf_2d_env
+# import svm_2d_env
+# import rbf_2d_env
 
 from sklearn.svm import SVR, SVC
 
@@ -13,47 +13,84 @@ import learn_gamma_fn
 
 from numpy import random as np_random
 
+epsilon = sys.float_info.epsilon
+
+# def null_space_bases(n):
+#     '''construct a set of d-1 basis vectors orthogonal to the given d-dim vector n'''
+#     d = len(n)
+#     es = []
+#     for i in range(1, d):
+#         e = [-n[i]]
+#         for j in range(1, d):
+#             if j == i:
+#                 e.append(n[0])
+#             else:
+#                 e.append(0)
+#         e = np.stack(e)
+#         es.append(e)
+#     return es
+
 def null_space_bases(n):
     '''construct a set of d-1 basis vectors orthogonal to the given d-dim vector n'''
     d = len(n)
-    es = []
-    for i in range(1, d):
-        e = [-n[i]]
-        for j in range(1, d):
-            if j == i:
-                e.append(n[0])
-            else:
-                e.append(0)
-        e = np.stack(e)
-        es.append(e)
+    es = []    
+    # Random vector
+    x = np.random.rand(d)    
+    # Make it orthogonal to n
+    x -= x.dot(n) * n / np.linalg.norm(n)**2
+    # normalize it
+    x /= np.linalg.norm(x)  
+    es.append(x)
+    # print(np.dot(n,x))
+    if np.dot(n,x) > 1e-10:
+        raise AssertionError()
+
+    # if 3d make cross product with x
+    if d == 3:        
+        y = np.cross(x,n)
+        es.append(y)
+        # print(np.dot(n,y), np.dot(x,y))
+        if np.dot(n,y) > 1e-10:
+            raise AssertionError()
+        if np.dot(x,y) > 1e-10:
+            raise AssertionError()
     return es
+
 
 def modulation_single_HBS(x, gamma, verbose = False):
     assert len(x.shape) == 1, 'x is not 1-dimensional?'
     d = x.shape[0]
     n = gamma.grad(x)
+    # print("Gamma Grad", n)
     es = null_space_bases(n)
+    # print("Null space bases", es)
+
     if verbose:
         print ("x", x)
         print ("nearest point", gamma.nearest_boundary_pt(x))
      
-    if isinstance(gamma.center, (np.ndarray, np.generic)):
-        r = x - gamma.center        
+    # if isinstance(gamma.center, (np.ndarray, np.generic)):
+    #     r = x - gamma.center        
+    elif isinstance(gamma.ref_point, (np.ndarray, np.generic)):
+        r = x - gamma.ref_point        
     else:
         r = x - gamma.nearest_boundary_pt(x)
 
-    # if gamma.center == None:
-    #     r = x - gamma.nearest_boundary_pt(x)
-    # else:
-    #     r = x - gamma.center
-
+    # print("r", r)
     bases = [r] + es
+    # print("bases", bases)
     E = np.stack(bases).T
+    # print("E", E)
     E = E / np.linalg.norm(E, axis=0)
+    # print("E_norm", E)
     inv_gamma = 1 / gamma(x)
+    # print("inv_gamma", inv_gamma)
     lambdas = np.stack([1 - inv_gamma] + [1 + inv_gamma] * (d-1))
+    # print("lambdas", lambdas)
     D = np.diag(lambdas)
+    # print("D", D)
     invE = np.linalg.inv(E)
+    # print("invE", invE)
     return np.matmul(np.matmul(E, D), invE)
 
 def modulation_single_HBS_learned(x, normal_vec, gamma_pt, obstacle_reference_points):
@@ -63,13 +100,6 @@ def modulation_single_HBS_learned(x, normal_vec, gamma_pt, obstacle_reference_po
     n = normal_vec
     es = null_space_bases(n)
     r =  x - obstacle_reference_points[0]
-
-    # # Search for nearest obstacle. Is this the right thing to do?
-    # dist_tmp = np.linalg.norm(x - obstacle_reference_points[0])
-    # for obs_ref_pt in obstacle_reference_points[1:]:
-    #     if np.linalg.norm(x - obs_ref_pt) < dist_tmp:
-    #         dist_tmp = np.linalg.norm(x - obs_ref_pt)
-    #         r = x - obs_ref_pt
     bases = [r] + es
     E = np.stack(bases).T
     E = E / np.linalg.norm(E, axis=0)
@@ -85,12 +115,24 @@ def modulation_HBS(x, orig_ds, gammas):
     gammas is a list of k Gamma objects
     '''
     # calculate weight
+
+    # print("x:", x)
+    # print("orig_ds:", orig_ds)
+
     gamma_vals = np.stack([gamma(x) for gamma in gammas])
-    # print("Gamma vals:", gamma_vals)
-    ms = np.log(gamma_vals - 1)
+    print("Gamma vals:", gamma_vals)
+
+    for i in range(gamma_vals.shape[0]):
+        if gamma_vals[i] < 1:
+            print("COLLIDED.. slipping now..")
+            gamma_vals[i] = 1         
+    
+    ms = np.log(gamma_vals - 1 + epsilon)
     logprod = ms.sum()
     bs = np.exp(logprod - ms)
     weights = bs / bs.sum()
+
+    # print("weights:", weights)
 
     # calculate modulated dynamical system
     x_dot_mods = []
