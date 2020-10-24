@@ -36,22 +36,22 @@ for k in np.linspace(0.55, 1.1, grid_size):
 
         # -- Fill in here the colors with gamma function -- #
         if use_gamma:
+          margin_offset = 1.5
           # Define Reference Points
           ref_point1 =   np.array([0.625, 0.0, 0.60])
 
           # Merged/T-shape
-          ref_point2 =   np.array([0.625, 0.0, 0.95])
-          ref_point3  =  np.array([0.625, 0.0, 0.95])
+          ref_point2 =   np.array([0.625, 0.0, 1.025])
+          ref_point3  =  np.array([0.625, 0.0, 1.025])
 
           # Independent Reference Points
-          # ref_point2 =   np.array([0.625, 0.0, 0.975])
-          # ref_point3  =  np.array([0.625, 0.0, 0.775])
+          # ref_point2 =   np.array([0.625, 0.0, 1.03])
+          # ref_point3  =  np.array([0.625, 0.0, 0.825])    
 
           # Define Gammas
-          gamma1   = GammaRectangle3D(np.array(1.6),  np.array(0.075), np.array(0.2),    np.array([0.625, 0.0, 0.6]),  ref_point1)
-          gamma2   = GammaRectangle3D(np.array(0.90),  np.array(0.10),  np.array(0.25),  np.array([0.625, 0.0, 0.975]), ref_point2)
-          gamma3   = GammaRectangle3D(np.array(0.125), np.array(0.30),   np.array(0.25), np.array([0.625, 0.0, 0.775]), ref_point3)
-
+          gamma1   = GammaRectangle3D(np.array(1.60),  np.array(0.05), np.array(0.2),    np.array([0.625, 0.0, 0.6]),   ref_point1, margin_offset)
+          gamma2   = GammaRectangle3D(np.array(0.80),  np.array(0.075),  np.array(0.25),  np.array([0.625, 0.0, 1.045]), ref_point2, margin_offset)
+          gamma3   = GammaRectangle3D(np.array(0.075),  np.array(0.375),   np.array(0.25), np.array([0.625, 0.0, 0.825]), ref_point3, margin_offset)
           gammas = [gamma1, gamma2, gamma3]
           x_eval = np.array([x, y, z])          
           # print("Gamma vals:", gamma_vals)

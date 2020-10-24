@@ -3,6 +3,7 @@ from __future__ import print_function
 import rospy, math, sys
 from cartHBSModulation_class import CartesianMotionControl_DSModulation
 import numpy as np
+import numpy.linalg as LA
 from numpy import random as np_random
 
 # This is for modulation and visualization
@@ -45,9 +46,10 @@ if __name__ == '__main__':
                                                  # 2: Joint-space DS with task-space target  (JT-DS)
     
     #  Selected goal in joint space #
-    goal        = rospy.get_param('~goal', 1)   
-    ctrl_orient = rospy.get_param('~ctrl_orient', 0)   
-    draw_DS     = rospy.get_param('~draw_DS', 1)   
+    goal           = rospy.get_param('~goal', 1)   
+    ctrl_orient    = rospy.get_param('~ctrl_orient', 0)   
+    draw_DS        = rospy.get_param('~draw_DS', 1)   
+    do_streamlines = rospy.get_param('~stream', 1)   
 
     # control for position + orientation
     # DS_attractor= [x, y, z, q_x, q_y, q_z, q_w]
@@ -80,74 +82,123 @@ if __name__ == '__main__':
         ###########################################################        
         ''' -- Visualize expected DS vector field in 2D Slice -- '''
         ###########################################################        
-        x_target  = np.array([DS_attractor[1], DS_attractor[2]])
+        x_target      = np.array([DS_attractor[1], DS_attractor[2]])
+        margin_offset = 1.5
         # Define Reference Points
         ref_point1 =   np.array([0.0, 0.60])
 
         # Merged/T-shape
-        ref_point2 =   np.array([0.0, 0.95])
-        ref_point3  =  np.array([0.0, 0.95])
+        ref_point2 =   np.array([0.0, 1.025])
+        ref_point3  =  np.array([0.0, 1.025])
 
         # Independent Reference Points
-        # ref_point2 =   np.array([0.0, 0.975])
-        # ref_point3  =  np.array([0.0, 0.775])
+        # ref_point2 =   np.array([0.0, 1.03])
+        # ref_point3  =  np.array([0.0, 0.825])
 
         # Define Gammas
-        gamma1    = GammaRectangle2D(np.array(1.60),  np.array(0.075), np.array([0.0, 0.6]),  ref_point1)
-        gamma2    = GammaRectangle2D(np.array(0.90),  np.array(0.10),  np.array([0.0, 0.975]),  ref_point2)
-        gamma3    = GammaRectangle2D(np.array(0.125),  np.array(0.30),   np.array([0.0, 0.775]), ref_point3)
+        gamma1    = GammaRectangle2D(np.array(1.60),  np.array(0.05),  np.array([0.0, 0.6]),  ref_point1, margin_offset)
+        gamma2    = GammaRectangle2D(np.array(0.80),  np.array(0.075),  np.array([0.0, 1.045]),  ref_point2, margin_offset)
+        gamma3    = GammaRectangle2D(np.array(0.075),  np.array(0.375),  np.array([0.0, 0.825]), ref_point3, margin_offset)
+        # gammas_2d = [gamma1, gamma2, gamma3]
+        gammas_2d = [gamma2]
 
+        if do_streamlines:
+            # Add streamline plot from learned LPV-DS
+            fig, ax1 = plt.subplots()        
+            # Create figure/environment to draw trajectories on
+            fig1, ax1 = plt.subplots()
+            ax1.set_xlim(-0.8, 0.8)
+            ax1.set_ylim(0.55, 1.25)
+            # plt.gca().set_aspect('equal', adjustable='box')
+            plt.xlabel('$x_1$',fontsize=15)
+            plt.ylabel('$x_2$',fontsize=15)
+            plt.title('HBS Modulated DS 2D slice (x-axis):',fontsize=15)
 
-        gammas_2d = [gamma1, gamma2, gamma3]
+            for gamma in gammas_2d:
+                gamma.draw()
 
-        plt.figure()
-        for i in np.linspace(-0.8, 0.8, 50):
-            for j in np.linspace(0.55, 1.1, 50):                    
-                x = np.array([i, j])
-                if min([gamma(x) for gamma in gammas_2d]) < 1:
-                    continue
-                orig_ds = linear_controller(x, x_target)
-                modulated_x_dot = modulation_HBS(x, orig_ds, gammas_2d) * 0.05
-                plt.arrow(i, j, modulated_x_dot[0], modulated_x_dot[1],
-                    head_width=0.008, head_length=0.01)
+            grid_size = 50
+            Y, X = np.mgrid[0.55:1.25:50j, -0.8:0.8:50j]
+            V, U = np.mgrid[0.55:1.25:50j, -0.8:0.8:50j]
+            gamma_eval = gamma3
+            gamma_val = np.zeros((len(X), len(Y)))
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    x_query    = np.array([X[i,j], Y[i,j]])        
+                    orig_ds    = linear_controller(x_query, x_target)
+                    mod_x_dot  = modulation_HBS(x_query, orig_ds, gammas_2d)
+                    x_dot_norm = mod_x_dot/LA.norm(mod_x_dot) * 0.02
+                    U[i,j]     = x_dot_norm[0]
+                    V[i,j]     = x_dot_norm[1]
 
-        for gamma in gammas_2d:
-            gamma.draw()
-        plt.axis([-0.8, 0.8, 0.55, 1.1])
-        # plt.gca().set_aspect('equal', adjustable='box')
-        plt.plot([x_target[0]], [x_target[1]], 'r*')
-        plt.plot([ref_point1[0]], [ref_point1[1]], 'y*')
-        plt.plot([ref_point2[0]], [ref_point2[1]], 'y*')
-        plt.plot([ref_point3[0]], [ref_point3[1]], 'y*')
-        # plt.savefig('../data/vector_field_HBS.png', bbox_inches='tight')
-        plt.savefig('../data/vector_field_HBS.png')
-        # plt.show()    
+                    gamma_vals     = np.stack([gamma(x_query) for gamma in gammas_2d])
+                    gamma_min      = min(gamma_vals)
+                    gamma_val[i,j] = gamma_min
+
+            strm      = ax1.streamplot(X, Y, U, V, density = 3.5, linewidth=0.55, color='k')
+            levels    = np.array([0, 1])
+            # cs0       = ax1.contour(X, Y, gamma_val, levels, origin='lower', colors='k', linewidths=2)
+            cs        = ax1.contourf(X, Y, gamma_val, np.arange(-5, 10, 2), cmap=plt.cm.coolwarm, extend='both', alpha=0.8)
+            cbar      = plt.colorbar(cs)
+            # cbar.add_lines(cs0)
+
+            # Add trajectories used to learn DS
+            ax1.plot([ref_point1[0]], [ref_point1[1]], 'y*')
+            ax1.plot([ref_point2[0]], [ref_point2[1]], 'y*')
+            ax1.plot([ref_point3[0]], [ref_point3[1]], 'y*')
+            ax1.plot(x_target[0], x_target[1], 'md', markersize=12, lw=2)
+            plt.savefig('../data/stream_lines_HBS.png')
+        else: 
+            plt.figure()
+            for i in np.linspace(-0.8, 0.8, 50):
+                for j in np.linspace(0.55, 1.1, 50):                    
+                    x = np.array([i, j])
+                    if min([gamma(x) for gamma in gammas_2d]) < 1:
+                        continue
+                    orig_ds = linear_controller(x, x_target)
+                    modulated_x_dot = modulation_HBS(x, orig_ds, gammas_2d) * 0.05
+                    plt.arrow(i, j, modulated_x_dot[0], modulated_x_dot[1],
+                        head_width=0.008, head_length=0.01)
+
+            for gamma in gammas_2d:
+                gamma.draw()
+            plt.axis([-0.8, 0.8, 0.55, 1.1])
+            plt.plot([x_target[0]], [x_target[1]], 'r*')
+            plt.plot([ref_point1[0]], [ref_point1[1]], 'y*')
+            plt.plot([ref_point2[0]], [ref_point2[1]], 'y*')
+            plt.plot([ref_point3[0]], [ref_point3[1]], 'y*')
+            plt.savefig('../data/vector_field_HBS.png')
 
     ##############################################
     ''' -- Generate Real 3D Gamma Functions -- '''
     ##############################################
-
+    margin_offset = 1.5
     # Define Reference Points
     ref_point1 =   np.array([0.625, 0.0, 0.60])
 
     # Merged/T-shape
-    ref_point2 =   np.array([0.625, 0.0, 0.95])
-    ref_point3  =  np.array([0.625, 0.0, 0.95])
+    ref_point2 =   np.array([0.625, 0.0, 1.025])
+    ref_point3  =  np.array([0.625, 0.0, 1.025])
 
     # Independent Reference Points
-    # ref_point2 =   np.array([0.625, 0.0, 0.975])
-    # ref_point3  =  np.array([0.625, 0.0, 0.775])
+    # ref_point2 =   np.array([0.625, 0.0, 1.03])
+    # ref_point3  =  np.array([0.625, 0.0, 0.825])    
 
     # Define Gammas
-    gamma1   = GammaRectangle3D(np.array(1.6),  np.array(0.075), np.array(0.2),    np.array([0.625, 0.0, 0.6]),  ref_point1)
-    gamma2   = GammaRectangle3D(np.array(0.90),  np.array(0.10),  np.array(0.25),  np.array([0.625, 0.0, 0.975]), ref_point2)
-    gamma3   = GammaRectangle3D(np.array(0.125), np.array(0.30),   np.array(0.25), np.array([0.625, 0.0, 0.775]), ref_point3)
-    gammas = [gamma1, gamma2, gamma3]
+    gamma1   = GammaRectangle3D(np.array(1.60),  np.array(0.05), np.array(0.2),    np.array([0.625, 0.0, 0.6]),   ref_point1, margin_offset)
+    gamma2   = GammaRectangle3D(np.array(0.80),  np.array(0.075),  np.array(0.25),  np.array([0.625, 0.0, 1.045]), ref_point2, margin_offset)
+    gamma3   = GammaRectangle3D(np.array(0.075),  np.array(0.375),   np.array(0.25), np.array([0.625, 0.0, 0.825]), ref_point3, margin_offset)
+    # gammas = [gamma1, gamma2, gamma3]
+    gammas = [gamma2]
 
     # DS system matrix, gains for each task-space error    
-    A_p = [[3.0, 0, 0], 
-           [0, 3.0, 0],
-           [0, 0, 3.0]]
+    # A_p = [[2.0, 0, 0], 
+    #        [0, 2.0, 0],
+    #        [0, 0, 2.0]]
+
+    A_p = [[0.5, 0, 0], 
+           [0, 0.5, 0],
+           [0, 0, 0.5]]
 
     A_o = [[3.0, 0, 0], 
            [0, 3.0, 0],

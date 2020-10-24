@@ -125,7 +125,8 @@ def modulation_HBS(x, orig_ds, gammas):
     for i in range(gamma_vals.shape[0]):
         if gamma_vals[i] < 1:
             print("COLLIDED.. slipping now..")
-            gamma_vals[i] = 1         
+            # raise AssertionError()
+               
     
     ms = np.log(gamma_vals - 1 + epsilon)
     logprod = ms.sum()

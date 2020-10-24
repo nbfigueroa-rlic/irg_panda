@@ -35,12 +35,13 @@ class GammaCircle2D(Gamma):
 		plt.gca().add_artist(plt.Circle(self.center, self.radius.item()))
 
 class GammaRectangle2D(Gamma):
-	def __init__(self, w, h, center, ref_point):
+	def __init__(self, w, h, center, ref_point, margin_offset):
 		super(GammaRectangle2D, self).__init__()
 		self.center    = center
 		self.w         = w
 		self.h         = h
 		self.ref_point = ref_point
+		self.margin    = margin_offset
 	def __call__(self, pt):
 		x, y = pt - self.center
 		angle = np.arctan2(y, x)
@@ -49,9 +50,19 @@ class GammaRectangle2D(Gamma):
 		third = np.arctan2(-self.h/2, -self.w/2)
 		fourth = np.arctan2(-self.h/2, self.w/2)
 		if (first < angle < second) or (third < angle < fourth):
-			return 2 * np.abs(y) / self.h
+			gamma =  2 * np.abs(y) / self.h
 		else:
-			return 2 * np.abs(x) / self.w
+			gamma =  2 * np.abs(x) / self.w
+		
+		# Application of margin extrusion
+		if (gamma < self.margin) and (gamma > 1.0):
+			gamma = 1.0
+		if gamma < self.margin:
+			gamma = 1e-10
+
+		# print("gamma:", gamma)	
+		return gamma	
+
 	def grad(self, pt):
 		x, y = pt - self.center
 		angle = np.arctan2(y, x)
@@ -71,14 +82,16 @@ class GammaRectangle2D(Gamma):
 
 
 class GammaRectangle3D(Gamma):
-	def __init__(self, w, h, l_start, center, ref_point):
+	def __init__(self, w, h, l_start, center, ref_point, margin_offset):
 		super(GammaRectangle3D, self).__init__()
-		self.center   = center
-		self.w         = w + 0.05
-		self.h         = h + 0.05
+		self.center    = center
+		self.w         = w 
+		self.h         = h 
 		self.l_start   = l_start
-		self.l_start   = ref_point
+		self.ref_point = ref_point
 		self.gamma_val = 0
+		self.margin    = margin_offset
+
 	def __call__(self, pt):
 		x, y, z = pt - self.center
 		angle = np.arctan2(z, y)
@@ -86,17 +99,23 @@ class GammaRectangle3D(Gamma):
 		second = np.arctan2(self.h/2, -self.w/2)
 		third = np.arctan2(-self.h/2, -self.w/2)
 		fourth = np.arctan2(-self.h/2, self.w/2)
-		gamma_ = [] 
 		if (first < angle < second) or (third < angle < fourth):
-			gamma_ =  2 * np.abs(z) / self.h
+			gamma =  2 * np.abs(z) / self.h
 		else:
-			gamma_ =  2 * np.abs(y) / self.w 
+			gamma =  2 * np.abs(y) / self.w 
 		
-		if (gamma_ < 1) and (pt[0] < self.l_start):
-			gamma_ =  gamma_ +  2 * np.abs(x) / (1 - self.l_start) 
+		# Application of margin extrusion
+		if (gamma < self.margin) and (gamma > 1.0):
+			gamma = 1.0
+		if gamma < self.margin:
+			gamma = 1e-10
 
-		self.gamma_val = gamma_
-		return gamma_	
+		if (gamma < 1) and (pt[0] < self.l_start):
+			gamma =  gamma +  2 * np.abs(x) / (1 - self.l_start) 
+
+
+		self.gamma_val = gamma
+		return gamma	
 
 	def grad(self, pt):
 		x, y, z = pt - self.center
@@ -110,9 +129,9 @@ class GammaRectangle3D(Gamma):
 			gamma_grad =  np.stack([0, np.array(0.), np.sign(z)*2/self.h])
 		else:
 			gamma_grad =  np.stack([0, np.sign(y)*2/self.w, np.array(0.)])		
-		
-		if (self.gamma_val < 1) and (pt[0] < self.l_start):
-			gamma_grad[0] = -10
+		norm_2d = np.linalg.norm(gamma_grad)
+		if (self.gamma_val < 1.1) and (pt[0] < self.l_start):
+			gamma_grad[0] = -0.5*norm_2d
 
 		return gamma_grad
 

@@ -241,8 +241,12 @@ class CartesianMotionControl_DSModulation(object):
         else:
             lin_vel =  self.scale_DS*modulation_HBS(np.array(self.ee_pos), np.array(orig_ds), self.gammas) 
             if np.isnan(LA.norm(lin_vel)):
-                rospy.loginfo('Collided!!')
-                lin_vel =  self.scale_DS*orig_ds
+                rospy.loginfo('Collided!! PENETRATED SURFACE FUNCTION!!!')
+                # raise AssertionError()
+                # lin_vel =  np.array([0,0,0])
+                # lin_vel =  self.scale_DS*orig_ds
+
+        rospy.loginfo('Desired linear velocity: {}'.format(lin_vel))     
 
         # --- Quaternion error --- #
         quat_attr_    = Quaternion(array=[self.DS_quat_att[3],self.DS_quat_att[0],self.DS_quat_att[1],self.DS_quat_att[2]])
