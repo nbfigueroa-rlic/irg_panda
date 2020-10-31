@@ -229,14 +229,14 @@ def forward_integrate_singleGamma_HBS(x_initial, x_target, learned_gamma, dt, ep
     x_cur = x_initial
     print("Before Integration")
     for i in range(max_N):
-        print(x_cur)
-        print(x_target)
+        # print(x_cur)
+        # print(x_target)
         gamma_val  = learn_gamma_fn.get_gamma(x_cur, classifier, max_dist, reference_points, dimension=dim)
-        print(gamma_val)
+        # print(gamma_val)
         normal_vec = learn_gamma_fn.get_normal_direction(x_cur, classifier, reference_points, max_dist, dimension=dim)        
-        print(normal_vec)
+        # print(normal_vec)
         orig_ds    = linear_controller(x_cur, x_target)
-        print(orig_ds)
+        # print(orig_ds)
         x_dot      = modulation_singleGamma_HBS_multiRef(query_pt=x_cur, orig_ds=orig_ds, gamma_query=gamma_val,
                             normal_vec_query=normal_vec.reshape(dim), obstacle_reference_points=reference_points, repulsive_gammaMargin=0.01)
         x_dot      = x_dot/np.linalg.norm(x_dot + epsilon) * 0.03 
@@ -253,7 +253,7 @@ def forward_integrate_singleGamma_HBS(x_initial, x_target, learned_gamma, dt, ep
 ######################################################################################################################
 ## For use with non-class defined gamma functions (singleGamma is a single gamma function describing all obstacles) ##
 ######################################################################################################################
-def modulation_singleGamma_HBS(x, orig_ds, normal_vec, gamma_pt, reference_point, ref_adapt = True, tangent_scale_max = 5.0):
+def modulation_singleGamma_HBS(x, orig_ds, normal_vec, gamma_pt, reference_point, ref_adapt = True, tangent_scale_max = 10.0):
     '''
         Compute modulation matrix for a single obstacle described with a gamma function
         and unique reference point
@@ -294,9 +294,7 @@ def modulation_singleGamma_HBS(x, orig_ds, normal_vec, gamma_pt, reference_point
             # print("Going AWAY from obstacle!")
             tangent_scale_max = 1.0
             tangent_scaling   = 1.0
-            lambdas = np.stack([1] + [tangent_scaling*(1 + inv_gamma)] * (d-1))
-
-
+            lambdas = np.stack([1] + [tangent_scale_max*(1 + inv_gamma)] * (d-1))
 
     D = np.diag(lambdas)
     # print("D", D)
@@ -322,8 +320,8 @@ def modulation_singleGamma_HBS_multiRef(query_pt, orig_ds, gamma_query, normal_v
     #     gamma_query = 1.0
 
     # Add: Contingencies for low gamma (inside obstacle) and high gamma (somewhere far away!)
-    if gamma_query < 1.0:
-        return np.zeros(orig_ds.shape)
+    # if gamma_query < 1.0:
+    #     return np.zeros(orig_ds.shape)
 
     if gamma_query > 1e9:
         return orig_ds

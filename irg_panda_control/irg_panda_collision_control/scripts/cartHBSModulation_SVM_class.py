@@ -17,8 +17,11 @@ from franka_core_msgs.msg import JointCommand, RobotState, EndPointState
 import numpy as np
 
 # For modulation!
-from obstacles import GammaRectangle3D
-from modulation_ros import linear_controller, modulation_HBS
+import sys
+sys.path.append("./dynamical_system_modulation_svm/")
+import learn_gamma_fn
+from modulation_utils import *
+import modulation_svm
 
 # Globally defined variables
 PI = math.pi
@@ -54,7 +57,7 @@ class CartesianMotionControl_DSModulation(object):
     """
         This class sends desired twists (linear and angular velocity) to the 
     """
-    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005, ctrl_orient = 1, gammas = []):
+    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005, ctrl_orient = 1, learned_gamma = []):
 
         # Subscribe to robot joint state
         self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, 
@@ -75,6 +78,7 @@ class CartesianMotionControl_DSModulation(object):
         # ---Publishes twist command to filter node
         self._pub_twist    = rospy.Publisher('/panda_simulator/desired_twist', Twist, queue_size=10)        
         self._pub_target   = rospy.Publisher('DS_target', PointStamped, queue_size=1)
+        self._pub_ee_pos   = rospy.Publisher('curr_ee_pos', PointStamped, queue_size=1)
         self._pub_wrench   = rospy.Publisher('/panda_simulator/desired_wrench', WrenchStamped, queue_size=10)
 
         # Robot state
@@ -126,9 +130,11 @@ class CartesianMotionControl_DSModulation(object):
         # Control Variables
         self.desired_position   = [0,0,0,0,0,0]
         self.desired_velocity   = [0,0,0,0,0,0]
-        self.max_lin_vel        = 1.70
-        self.max_ang_vel        = 2.5
+        # self.max_lin_vel        = 1.70
+        # self.max_ang_vel        = 2.5
 
+        self.max_lin_vel        = 1.0
+        self.max_ang_vel        = 1.0
 
         # Variables for DS-Motion Generator
         self.dt            = 1.0/float(ctrl_rate)        
@@ -139,10 +145,13 @@ class CartesianMotionControl_DSModulation(object):
         self._stop         = 0
 
         # Linear DS     
-        self.A_p           = np.array(A_p)
-        self.pos_error     = 0 
-        self.scale_DS      = 1
-        self.gammas        = gammas
+        self.A_p               = np.array(A_p)
+        self.pos_error         = 0 
+        self.scale_DS          = 1
+        self.learned_gamma     = learned_gamma
+        self.classifier        = learned_gamma['classifier']
+        self.max_dist          = learned_gamma['max_dist']
+        self.reference_points  = learned_gamma['reference_points']
 
         # Quaternion DS
         self.A_o           = np.array(A_o)                
@@ -230,22 +239,32 @@ class CartesianMotionControl_DSModulation(object):
             Compute desired task-space velocities from state-dependent DS
         """        
 
-        # --- Linear Controller --- #
+        # --- Linear Controller with Modulated DS! --- #
         pos_delta = self.ee_pos - self.DS_pos_att    
         self.pos_error  = LA.norm(pos_delta)        
 
         # Compute Desired Linear Velocity
         orig_ds = -self.A_p.dot(pos_delta)
-        if not self.gammas:
-            lin_vel =  self.scale_DS*orig_ds
-        else:
-            lin_vel =  self.scale_DS*modulation_HBS(np.array(self.ee_pos), np.array(orig_ds), self.gammas) 
-            if np.isnan(LA.norm(lin_vel)):
-                rospy.loginfo('Collided!! PENETRATED SURFACE FUNCTION!!!')
-                # raise AssertionError()
-                # lin_vel =  np.array([0,0,0])
-                # lin_vel =  self.scale_DS*orig_ds
+        rospy.loginfo("x_dot:{}".format(orig_ds))
+        gamma_val  = learn_gamma_fn.get_gamma(np.array(self.ee_pos), self.classifier, self.max_dist, self.reference_points, dimension=3)
+        rospy.loginfo("gamma(x):{}".format(gamma_val))
+        normal_vec = learn_gamma_fn.get_normal_direction(np.array(self.ee_pos), self.classifier, self.reference_points, self.max_dist, dimension=3)        
+        rospy.loginfo("gamma_grad(x):{}".format(normal_vec))
 
+        if gamma_val < 1:
+            rospy.loginfo('ROBOT IS COLLIDED REGION!!!')
+            # lin_vel = -5*(self.ee_pos - self.reference_points)
+            # lin_vel = normal_vec
+            # lin_vel =  self.scale_DS*orig_ds
+
+        # if np.dot(orig_ds, normal_vec) > 0:
+        #     x_dot_mod  = orig_ds
+        # else:
+        x_dot_mod  = modulation_svm.modulation_singleGamma_HBS_multiRef(query_pt=np.array(self.ee_pos), orig_ds=np.array(orig_ds), gamma_query=gamma_val,
+                            normal_vec_query=normal_vec.reshape(3), obstacle_reference_points= self.reference_points, repulsive_gammaMargin=0.01)
+    
+        rospy.loginfo("x_dot_mod:{}".format(x_dot_mod))
+        lin_vel =  self.scale_DS*x_dot_mod
         rospy.loginfo('Desired linear velocity: {}'.format(lin_vel))     
 
         # --- Quaternion error --- #
@@ -280,11 +299,16 @@ class CartesianMotionControl_DSModulation(object):
             Convert numpy arrays to Twist-msg and publish
         """       
         # Truncate velocities if too high!
-        if LA.norm(lin_vel) > 0.9*self.max_lin_vel:
+        if LA.norm(lin_vel) > self.max_lin_vel:
                 lin_vel = lin_vel/LA.norm(lin_vel) * self.max_lin_vel
 
-        if LA.norm(ang_vel) > 0.9*self.max_ang_vel:
+        if LA.norm(ang_vel) > self.max_ang_vel:
                 ang_vel = ang_vel/LA.norm(ang_vel) * self.max_ang_vel
+
+
+        # Scale velocities if too low
+        if LA.norm(lin_vel) < 0.2 and self.pos_error > 0.05:
+                lin_vel = lin_vel/LA.norm(lin_vel + 1e-5) * 0.2
 
         rospy.loginfo('||x_dot||: {}'.format(LA.norm(lin_vel)))
         rospy.loginfo('||omega||: {}'.format(LA.norm(ang_vel)))
@@ -317,6 +341,18 @@ class CartesianMotionControl_DSModulation(object):
            self._pub_target.publish( p )
 
 
+    def _publish_EE_position(self):
+           p = PointStamped()
+           p.header.frame_id = "/world"
+           p.header.stamp = rospy.Time.now()
+           
+           p.point.x = self.ee_pos[0]
+           p.point.y = self.ee_pos[1]
+           p.point.z = self.ee_pos[2]
+
+           self._pub_ee_pos.publish( p )
+
+
     def _compute_desired_wrench(self, lin_vel, ang_vel):
             """
             Computes desired task-space force using PD law
@@ -332,8 +368,8 @@ class CartesianMotionControl_DSModulation(object):
             # Task-space controller parameters
             # K_pos = 50.
             # K_ori = 25.
-            K_pos = 100.
-            K_ori = 100.
+            K_pos = 200.
+            K_ori = 50.
             # damping gains
             # D_pos = 10.
             # D_ori = 1.
@@ -407,6 +443,7 @@ class CartesianMotionControl_DSModulation(object):
             # Publish desired twist
             self._publish_desired_twist(lin_vel, ang_vel) 
             self._publish_DS_target()
+            self._publish_EE_position()
             # self._publish_desired_wrench(lin_vel, ang_vel)
 
             # Compute desired velocities from DS

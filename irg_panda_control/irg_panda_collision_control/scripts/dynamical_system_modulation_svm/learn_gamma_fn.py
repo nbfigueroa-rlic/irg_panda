@@ -123,8 +123,6 @@ def get_gamma(position, classifier, max_dist, reference_points, dimension = 2):
     nb_ref_points = len(reference_points)
     svm_bias = classifier.intercept_
 
-    print("dimension", dimension)
-
     if dimension == 2:
         score = classifier.decision_function(np.c_[position[0].T, position[1].T])
     elif dimension == 3:    

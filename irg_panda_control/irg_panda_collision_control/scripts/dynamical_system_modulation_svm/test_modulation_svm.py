@@ -33,7 +33,7 @@ def rand_target_loc():
     # z = np_random.uniform(low=0.65, high=1.0)
 
     # MODIFIED TO ACCOUNT FOR CHANGE IN REFERENCE FRAME
-    y = np.random.uniform(low=0.05, high=0.5)
+    y = np.random.uniform(low=0.05, high=0.45)
     if np.random.randint(0, 2) == 0:
         y = -y
     x = np.random.uniform(low = 0.3, high = 0.8)
@@ -114,11 +114,12 @@ def create_franka_dataset(dimension, grid_size, plot_training_data):
 
         return X_slice[1:3,:], Y_slice, C_slice
     else: 
-        print("Plotting 3D Data")
+        
         X_FREE      = X[:,C.T == 0]
         X_OBS1      = X[:,C.T == 1]
         X_OBS2      = X[:,C.T == 2]
         if plot_training_data:
+            print("Plotting 3D Data")
             fig = plt.figure()  
             ax = plt.axes(projection='3d')
             ax.scatter3D(X_FREE[0,:],X_FREE[1,:], X_FREE[2,:],'.', alpha= 0.1, color='#57B5E5', label='No Collision');
@@ -188,7 +189,6 @@ def test2D_HBS_svmlearnedGammas(x_target, gamma_type, which_data):
         normal_vecs = learn_gamma_fn.get_normal_direction(positions, classifier, reference_points, max_dist, gamma_svm=gamma_svm)
         fig,ax      = learn_gamma_fn.draw_contour_map(classifier, max_dist, reference_points, gamma_value=True, normal_vecs=normal_vecs, 
             grid_limits_x=grid_limits_x, grid_limits_y=grid_limits_y, grid_size=grid_size, data=X[:,Y==1])
-        # fig.savefig(filename)
         fig.savefig(filename+".png", dpi=300)
         fig.savefig(filename+".pdf", dpi=300)
 
