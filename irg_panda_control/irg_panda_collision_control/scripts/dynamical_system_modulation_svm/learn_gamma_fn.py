@@ -154,6 +154,7 @@ def get_gamma(position, classifier, max_dist, reference_points, dimension = 2):
             dist  = [np.linalg.norm(position - reference_point)]
 
     # Adapted score to get rid of sink
+    # bias_scale   = 2.0
     bias_scale   = 1.0
     ind_highvals = score < bias_scale*svm_bias
     score_adapt  = score

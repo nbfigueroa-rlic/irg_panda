@@ -78,6 +78,8 @@ def get_directional_weighted_sum(reference_direction, directions, weights, total
     ind_nonzero = (weights>0) # non-negative
 
     reference_direction = np.copy(reference_direction)
+    print(reference_direction)
+    print(directions)
     directions = directions[:, ind_nonzero] 
     weights = weights[ind_nonzero]
 

@@ -244,7 +244,8 @@ class CartesianMotionControl_DSModulation(object):
         self.pos_error  = LA.norm(pos_delta)        
 
         # Compute Desired Linear Velocity
-        orig_ds = -self.A_p.dot(pos_delta)
+        # orig_ds = -self.A_p.dot(pos_delta)
+        orig_ds = -pos_delta
         rospy.loginfo("x_dot:{}".format(orig_ds))
         gamma_val  = learn_gamma_fn.get_gamma(np.array(self.ee_pos), self.classifier, self.max_dist, self.reference_points, dimension=3)
         rospy.loginfo("gamma(x):{}".format(gamma_val))
@@ -252,10 +253,7 @@ class CartesianMotionControl_DSModulation(object):
         rospy.loginfo("gamma_grad(x):{}".format(normal_vec))
 
         if gamma_val < 1:
-            rospy.loginfo('ROBOT IS COLLIDED REGION!!!')
-            # lin_vel = -5*(self.ee_pos - self.reference_points)
-            # lin_vel = normal_vec
-            # lin_vel =  self.scale_DS*orig_ds
+            rospy.loginfo('ROBOT IS COLLIDED REGION.. DO SOMETHING, CHARLIE!!!')
 
         # if np.dot(orig_ds, normal_vec) > 0:
         #     x_dot_mod  = orig_ds
@@ -265,10 +263,44 @@ class CartesianMotionControl_DSModulation(object):
     
         rospy.loginfo("x_dot_mod:{}".format(x_dot_mod))
         lin_vel =  self.scale_DS*x_dot_mod
+
+        # if self.ee_pos[2] > 1.0 and gamma_val < 1:
+            # lin_vel[2] = lin_vel[2] + 0.05 
+
         rospy.loginfo('Desired linear velocity: {}'.format(lin_vel))     
 
+        # --- Compute desired attractor aligned to reference --- #
+        desired_rotation = np.array((3,3))
+        # if np.linalg.norm(normal_vec) == 0:
+        #     R_z = np.array([0,0,-1])    
+        # else:
+            # R_z = - normal_vec.reshape(3)/np.linalg.norm(normal_vec.reshape(3))
+        
+        if self.DS_attractor[1] < 0:
+            sign_y = -1
+        else:
+            sign_y = 1 
+
+        R_y = sign_y * orig_ds/np.linalg.norm(orig_ds)     
+        rospy.loginfo('R_y: {}'.format(R_y))
+
+        if self.ee_pos[2] > 1: 
+            R_z = np.array([0,0,-1])
+        else:
+            R_z = np.array([0,0,1])            
+        rospy.loginfo('R_y: {}'.format(R_y))        
+
+        # Make it orthogonal to n
+        R_y -= R_y.dot(R_z) * R_z / np.linalg.norm(R_z)**2
+        # normalize it
+        R_y /= np.linalg.norm(R_y)
+        R_x = np.cross(R_y,R_z)
+        desired_rotation = np.hstack([R_x,R_y,R_z])
+        rospy.loginfo('R_mod: {}'.format(desired_rotation))        
+        quat_attr_ = Quaternion(matrix=self.ee_rot)
+
         # --- Quaternion error --- #
-        quat_attr_    = Quaternion(array=[self.DS_quat_att[3],self.DS_quat_att[0],self.DS_quat_att[1],self.DS_quat_att[2]])
+        # quat_attr_    = Quaternion(array=[self.DS_quat_att[3],self.DS_quat_att[0],self.DS_quat_att[1],self.DS_quat_att[2]])
 
         # Difference between two quaternions
         delta_quat        = self.ee_quat * quat_attr_.conjugate
@@ -286,7 +318,11 @@ class CartesianMotionControl_DSModulation(object):
         delta_quat_des = Quaternion(array=[0, ang_vel[0]*self.dt, ang_vel[1]*self.dt, ang_vel[2]*self.dt])
         q_des          = Quaternion.exp(0.5*delta_quat_des) * self.ee_quat
         RTR_des        = RT.dot(q_des.rotation_matrix)
-        ang_vel_rot    = RTR_des.dot(ang_vel)
+
+        #scale angular velocity
+        w = 1 - math.tanh(gamma_val)
+        rospy.loginfo('w: {}'.format(w))        
+        ang_vel_rot    = w*RTR_des.dot(ang_vel)
         rospy.loginfo('omega: {}'.format(ang_vel_rot))        
 
         # Comments: there seems to be no difference when using velocity control.. but maybe 
@@ -307,8 +343,8 @@ class CartesianMotionControl_DSModulation(object):
 
 
         # Scale velocities if too low
-        if LA.norm(lin_vel) < 0.2 and self.pos_error > 0.05:
-                lin_vel = lin_vel/LA.norm(lin_vel + 1e-5) * 0.2
+        if LA.norm(lin_vel) < 0.25:
+                lin_vel = lin_vel/LA.norm(lin_vel + 1e-5) * 0.25
 
         rospy.loginfo('||x_dot||: {}'.format(LA.norm(lin_vel)))
         rospy.loginfo('||omega||: {}'.format(LA.norm(ang_vel)))
@@ -358,23 +394,23 @@ class CartesianMotionControl_DSModulation(object):
             Computes desired task-space force using PD law
             """   
             # Truncate velocities if too high!
-            if LA.norm(lin_vel) > 0.9*self.max_lin_vel:
+            if LA.norm(lin_vel) > self.max_lin_vel:
                     lin_vel = lin_vel/LA.norm(lin_vel) * self.max_lin_vel
 
-            if LA.norm(ang_vel) > 0.9*self.max_ang_vel:
+            if LA.norm(ang_vel) > self.max_ang_vel:
                     ang_vel = ang_vel/LA.norm(ang_vel) * self.max_ang_vel
 
 
             # Task-space controller parameters
             # K_pos = 50.
             # K_ori = 25.
-            K_pos = 200.
-            K_ori = 50.
+            K_pos = 500.
+            K_ori = 100.
             # damping gains
-            # D_pos = 10.
-            # D_ori = 1.
-            D_pos = math.sqrt(4*K_pos)
-            D_ori = math.sqrt(4*K_ori)
+            D_pos = 20.
+            D_ori = 5.
+            # D_pos = math.sqrt(4*K_pos)
+            # D_ori = math.sqrt(4*K_ori)
 
             # Desired robot end-effector state
             goal_pos     =  self.ee_pos + lin_vel*self.dt
@@ -384,7 +420,7 @@ class CartesianMotionControl_DSModulation(object):
             delta_pos = (goal_pos - self.ee_pos).reshape([3,1])
 
             # This should be the quaternion difference
-            delta_ori = (ang_vel*0.05).reshape([3,1]) 
+            delta_ori = (ang_vel).reshape([3,1]) 
             # delta_ori = self.delta_quat_des.reshape([3,1])
                
             delta_lin_vel = (self.ee_lin_vel - lin_vel).reshape([3,1])
@@ -394,12 +430,15 @@ class CartesianMotionControl_DSModulation(object):
             rospy.loginfo('Orientation Error: {}'.format(delta_ori))
 
             # Desired task-space force using PD law
-            if self.control_orient:
-                F_ee = np.vstack([K_pos*(delta_pos), K_ori*(delta_ori)]) - \
-                np.vstack([D_pos*(delta_lin_vel), D_ori*(self.ee_ang_vel.reshape([3,1]))])
-            else:     
-                F_ee = np.vstack([K_pos*(delta_pos), np.array([0,0,0]).reshape([3,1])]) - \
-                np.vstack([D_pos*(delta_lin_vel), np.array([0,0,0]).reshape([3,1])])
+            # F_ee = np.vstack([K_pos*(delta_pos), K_ori*(delta_ori)]) - \
+            # np.vstack([D_pos*(delta_lin_vel), D_ori*(self.ee_ang_vel.reshape([3,1]))])
+
+            # if self.control_orient:
+            #     F_ee = np.vstack([K_pos*(delta_pos), K_ori*(delta_ori)]) - \
+            #     np.vstack([D_pos*(delta_lin_vel), D_ori*(self.ee_ang_vel.reshape([3,1]))])
+            # else:     
+            F_ee = np.vstack([K_pos*(delta_pos), np.array([0,0,0]).reshape([3,1])]) - \
+            np.vstack([D_pos*(delta_lin_vel), np.array([0,0,0]).reshape([3,1])])
 
 
             rospy.loginfo('Desired Wrench: {}'.format(F_ee))

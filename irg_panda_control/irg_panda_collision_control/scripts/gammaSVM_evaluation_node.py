@@ -184,31 +184,31 @@ while not rospy.is_shutdown():
     pc2.header.stamp = rospy.Time.now()
     pub_gamma.publish(pc2)
     
-    # Integrate trajectories from initial point
-    if (i > 10):
-      ee_first = 1
+    # # Integrate trajectories from initial point
+    # if (i > 10):
+    #   ee_first = 1
 
 
-    if ee_first and i < 30 and (not ee_position ==[]) :
-      rospy.loginfo('INTEGRATIIING')
+    # if ee_first and i < 30 and (not ee_position ==[]) :
+    #   rospy.loginfo('INTEGRATIIING')
 
-      x_traj, x_dot_traj = modulation_svm.forward_integrate_singleGamma_HBS(ee_position, ds_target, learned_gamma, dt = 0.01, eps=0.03, max_N = 10000)
-      path_shape = x_traj.shape
-      rospy.loginfo("Length of plan {}".format(path_shape))
+    #   x_traj, x_dot_traj = modulation_svm.forward_integrate_singleGamma_HBS(ee_position, ds_target, learned_gamma, dt = 0.01, eps=0.03, max_N = 10000)
+    #   path_shape = x_traj.shape
+    #   rospy.loginfo("Length of plan {}".format(path_shape))
 
-      if (i > 15):
-        msg = Path()
-        msg.header.frame_id = "/world"
-        msg.header.stamp = rospy.Time.now()
-        rospy.loginfo("Length of plan {}".format(path_shape))
-        for ii in range(path_shape[0]):
-            pose = PoseStamped()
-            pose.pose.position.x = x_traj[ii,0]
-            pose.pose.position.y = x_traj[ii,1]
-            pose.pose.position.z = x_traj[ii,2]
-            msg.poses.append(pose)
-            rospy.loginfo("Publishing Plan...")
-            pub_fw_int.publish(msg) 
+    #   if (i > 15):
+    #     msg = Path()
+    #     msg.header.frame_id = "/world"
+    #     msg.header.stamp = rospy.Time.now()
+    #     rospy.loginfo("Length of plan {}".format(path_shape))
+    #     for ii in range(path_shape[0]):
+    #         pose = PoseStamped()
+    #         pose.pose.position.x = x_traj[ii,0]
+    #         pose.pose.position.y = x_traj[ii,1]
+    #         pose.pose.position.z = x_traj[ii,2]
+    #         msg.poses.append(pose)
+    #         rospy.loginfo("Publishing Plan...")
+    #         pub_fw_int.publish(msg) 
 
     # pub_path.publish()
     rospy.sleep(0.5)

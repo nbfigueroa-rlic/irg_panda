@@ -253,7 +253,7 @@ def forward_integrate_singleGamma_HBS(x_initial, x_target, learned_gamma, dt, ep
 ######################################################################################################################
 ## For use with non-class defined gamma functions (singleGamma is a single gamma function describing all obstacles) ##
 ######################################################################################################################
-def modulation_singleGamma_HBS(x, orig_ds, normal_vec, gamma_pt, reference_point, ref_adapt = True, tangent_scale_max = 10.0):
+def modulation_singleGamma_HBS(x, orig_ds, normal_vec, gamma_pt, reference_point, ref_adapt = True, tangent_scale_max = 5.0):
     '''
         Compute modulation matrix for a single obstacle described with a gamma function
         and unique reference point
@@ -331,7 +331,8 @@ def modulation_singleGamma_HBS_multiRef(query_pt, orig_ds, gamma_query, normal_v
         reference_point = obstacle_reference_points
         # print("HEEEERE")
     except:
-        reference_point = find_closest_reference_point(query_pt, obstacle_reference_points)
+        # reference_point = find_closest_reference_point(query_pt, obstacle_reference_points)
+        reference_point = obstacle_reference_points[0]
 
     # Add: Move away from center/reference point in case of a collision
     pos_relative     = -(query_pt - reference_point)
@@ -348,6 +349,9 @@ def modulation_singleGamma_HBS_multiRef(query_pt, orig_ds, gamma_query, normal_v
             repulsive_velocity = np.zeros(dim)
             repulsive_velocity[0] = 1*repulsive_speed
         x_dot_mod = -repulsive_velocity
+        x_dot_mod = 5*((query_pt - reference_point) + orig_ds)
+        # x_dot_mod[2] = ee_pos - 1.1*ee_pos 
+        print('SLIDING!')
     else:
         # Calculate real modulated dynamical system
         M = modulation_singleGamma_HBS(x=query_pt, orig_ds = orig_ds, normal_vec=normal_vec_query, gamma_pt=gamma_query,

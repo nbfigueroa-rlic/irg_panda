@@ -114,11 +114,12 @@ if __name__ == '__main__':
         print("DONE.")
     else:
         # Load Pre-Learned Model
-        learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
+        # learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
+        learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS_bounded.pkl", 'rb'))
 
 
     if do_streamline:
-        ctrl_rate    = 2000
+        ctrl_rate    = 1000
         rate         = rospy.Rate(ctrl_rate)
         rospy.loginfo('Getting current robot state')  
         pub_fw_int  = rospy.Publisher("DS_path", Path, queue_size = 2)
@@ -126,7 +127,7 @@ if __name__ == '__main__':
         ee_msg      = rospy.wait_for_message('/panda_simulator/custom_franka_state_controller/tip_state', EndPointState)
         ee_position = get_endpoint_state(ee_msg)
         rospy.loginfo('Doing Forward Integration')
-        x_traj, x_dot_traj = modulation_svm.forward_integrate_singleGamma_HBS(ee_position, DS_attractor[0:3], learned_gamma, dt = 0.10, eps=0.03, max_N = 10000)
+        x_traj, x_dot_traj = modulation_svm.forward_integrate_singleGamma_HBS(ee_position, DS_attractor[0:3], learned_gamma, dt = 0.05, eps=0.03, max_N = 10000)
         path_shape = x_traj.shape
         rospy.loginfo("Length of plan {}".format(path_shape))
         msg = Path()
