@@ -1,3 +1,5 @@
+This code depends on the './dynamical_system_modulation_svm/' directory found in our ROCUS code. 
+
 Dependencies:
 
 
