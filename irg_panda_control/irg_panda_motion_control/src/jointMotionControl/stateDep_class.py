@@ -383,7 +383,9 @@ class JointMotionControl_StateDependent(object):
         """ 
 
         t0 = time.time()
-        while not rospy.is_shutdown() and not self._stop:
+        reached = 0
+        # while not rospy.is_shutdown() and not self._stop:
+        while not rospy.is_shutdown() and not reached:
             # Compute desired velocities from DS
             des_vel = self._compute_desired_velocities()              
 
@@ -404,8 +406,7 @@ class JointMotionControl_StateDependent(object):
                 rospy.loginfo('Distance to pos-target: {}'.format(self.pos_error))
                 rospy.loginfo('Distance to quat-target: {}'.format(self.quat_error))    
                 self._publish_DS_target()            
-            
-            reached = 0
+                        
             if  self.pos_error < self.epsilon:
                 if self.DS_type == 1:
                     reached = 1
@@ -421,8 +422,9 @@ class JointMotionControl_StateDependent(object):
                 tF = time.time() - t0
                 rospy.loginfo('Final Execution time: {}'.format(tF))
                 rospy.loginfo('**** Target Reached! ****')
-                rospy.signal_shutdown('Reached target') 
+                # rospy.signal_shutdown('Reached target') 
                 break        
 
             # Control-loop rate
             self.rate.sleep()
+        return True

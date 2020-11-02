@@ -349,7 +349,9 @@ def modulation_singleGamma_HBS_multiRef(query_pt, orig_ds, gamma_query, normal_v
             repulsive_velocity = np.zeros(dim)
             repulsive_velocity[0] = 1*repulsive_speed
         x_dot_mod = -repulsive_velocity
-        x_dot_mod = 5*((query_pt - reference_point) + orig_ds)
+        # Above lines don't really work
+        repulsive_reference_direction = query_pt - reference_point
+        x_dot_mod = 5*(repulsive_reference_direction/np.linalg.norm(repulsive_reference_direction) + orig_ds/np.linalg.norm(orig_ds))
         # x_dot_mod[2] = ee_pos - 1.1*ee_pos 
         print('SLIDING!')
     else:

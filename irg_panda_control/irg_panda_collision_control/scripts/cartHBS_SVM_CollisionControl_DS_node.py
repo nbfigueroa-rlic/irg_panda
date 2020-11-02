@@ -163,7 +163,7 @@ if __name__ == '__main__':
            [0, 0, 3.0]]           
 
     # Threshold for stopping DS     
-    epsilon = 0.025
+    epsilon = 0.03
          
     ####### Motion Control Variables #######
     ctrl_rate   = 150 # 150hz

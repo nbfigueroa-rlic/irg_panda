@@ -57,7 +57,7 @@ class CartesianMotionControl_DSModulation(object):
     """
         This class sends desired twists (linear and angular velocity) to the 
     """
-    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005, ctrl_orient = 1, learned_gamma = []):
+    def __init__(self, DS_type = 1, A_p = [0.0] * 3, A_o = [0.0] * 3, DS_attractor = [0.0] * 7, ctrl_rate = 1000, epsilon = 0.005, ctrl_orient = 1, learned_gamma = [], pub_pose = 1):
 
         # Subscribe to robot joint state
         self._sub_js = rospy.Subscriber('/panda_simulator/custom_franka_state_controller/joint_states', JointState, 
@@ -86,6 +86,8 @@ class CartesianMotionControl_DSModulation(object):
         self.position         = [0,0,0,0,0,0,0]
         self.velocity         = [0,0,0,0,0,0,0]
         self.arm_dof          = len(arm_joint_names)
+        self.pub_pose = pub_pose
+
 
         # Create JointCommand message to publish commands
         self._pubmsg        = JointCommand()
@@ -230,6 +232,8 @@ class CartesianMotionControl_DSModulation(object):
         # self.ee_quat = quaternion.from_rotation_matrix(self.ee_rot)
         self.ee_quat = Quaternion(matrix=self.ee_rot)
 
+        if self.pub_pose:
+            self._publish_EE_position()
         # rospy.loginfo('\nCurrent ee-pos:\n {}'.format(self.ee_pos))
         # rospy.loginfo('\nCurrent ee-quat:\n {}'.format(self.ee_quat))
 
@@ -270,12 +274,7 @@ class CartesianMotionControl_DSModulation(object):
         rospy.loginfo('Desired linear velocity: {}'.format(lin_vel))     
 
         # --- Compute desired attractor aligned to reference --- #
-        desired_rotation = np.array((3,3))
-        # if np.linalg.norm(normal_vec) == 0:
-        #     R_z = np.array([0,0,-1])    
-        # else:
-            # R_z = - normal_vec.reshape(3)/np.linalg.norm(normal_vec.reshape(3))
-        
+        desired_rotation = np.array((3,3)) 
         if self.DS_attractor[1] < 0:
             sign_y = -1
         else:
@@ -288,7 +287,7 @@ class CartesianMotionControl_DSModulation(object):
             R_z = np.array([0,0,-1])
         else:
             R_z = np.array([0,0,1])            
-        rospy.loginfo('R_y: {}'.format(R_y))        
+        rospy.loginfo('R_z: {}'.format(R_z))        
 
         # Make it orthogonal to n
         R_y -= R_y.dot(R_z) * R_z / np.linalg.norm(R_z)**2
@@ -322,7 +321,7 @@ class CartesianMotionControl_DSModulation(object):
         #scale angular velocity
         w = 1 - math.tanh(gamma_val)
         rospy.loginfo('w: {}'.format(w))        
-        ang_vel_rot    = w*RTR_des.dot(ang_vel)
+        ang_vel_rot    = 2*RTR_des.dot(ang_vel)
         rospy.loginfo('omega: {}'.format(ang_vel_rot))        
 
         # Comments: there seems to be no difference when using velocity control.. but maybe 
@@ -386,7 +385,7 @@ class CartesianMotionControl_DSModulation(object):
            p.point.y = self.ee_pos[1]
            p.point.z = self.ee_pos[2]
 
-           self._pub_ee_pos.publish( p )
+           self._pub_ee_pos.publish( p )           
 
 
     def _compute_desired_wrench(self, lin_vel, ang_vel):
@@ -474,15 +473,14 @@ class CartesianMotionControl_DSModulation(object):
         """     
         t0 = time.time()
         reached = 0
-        while not rospy.is_shutdown() and not self._stop:
+        while not rospy.is_shutdown() and not reached:
 
             # Compute desired velocities from DS
             lin_vel, ang_vel = self._compute_desired_velocities()              
 
             # Publish desired twist
             self._publish_desired_twist(lin_vel, ang_vel) 
-            self._publish_DS_target()
-            self._publish_EE_position()
+            self._publish_DS_target()            
             # self._publish_desired_wrench(lin_vel, ang_vel)
 
             # Compute desired velocities from DS
@@ -500,18 +498,28 @@ class CartesianMotionControl_DSModulation(object):
             else:
                 if(self.pos_error < self.epsilon):
                     reached = 1
-
-            if reached == 1:
-                tF = time.time() - t0     
+            
+            tF = time.time() - t0
+            if reached == 1:                     
                 # Send 0 velocities when target reached!                
                 for ii in range(10):           
                     self._publish_desired_twist(np.array([0, 0, 0]), np.array([0, 0, 0]))
 
                 rospy.loginfo('Final Execution time: {}'.format(tF))
-                rospy.loginfo('**** Target Reached! ****')
-                rospy.signal_shutdown('Reached target') 
-                break        
+                rospy.loginfo('**** Target Reached -- SUCCESS! ****')
+                # rospy.signal_shutdown('Reached target') 
+                break     
 
+            if tF >= 10:
+                # Send 0 velocities when target reached!                
+                for ii in range(10):           
+                    self._publish_desired_twist(np.array([0, 0, 0]), np.array([0, 0, 0]))
+
+                rospy.loginfo('Final Execution time: {}'.format(tF))
+                rospy.loginfo('**** MAXIMUM TIME REACHED -- FAILED! ****')
+                # rospy.signal_shutdown('Maximum time reached') 
+                break     
 
             # Control-loop rate
             self.rate.sleep()
+        return True
