@@ -7,7 +7,7 @@ import numpy.linalg as LA
 from numpy import random as np_random
 
 # DS Modulation Libraries with Gamma Function
-sys.path.append("./dynamical_system_modulation_svm/")
+sys.path.append("./home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm")
 import learn_gamma_fn
 import modulation_svm
 import test_modulation_svm
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     ''' -- Load Gamma Function -- '''
     #################################    
     # learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
-    learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS_bounded.pkl", 'rb'))
+    learned_gamma, gamma_svm, c_svm = pickle.load(open("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS_bounded.pkl", 'rb'))
 
 
     if do_streamline:
@@ -133,76 +133,18 @@ if __name__ == '__main__':
 
     #################################################
     ''' -- Run DS Modulation + PD-Control Node -- '''
-    #################################################
+    #################################################        
+    rospy.loginfo("Waiting for NEW target from SAMPLER")
 
-    first = 0 
-    finished_joint_init = True
-    # while not rospy.is_shutdown():
-    for i in range(2):
-        
-        rospy.loginfo("Waiting for NEW target from SAMPLER")
+    # Wait for Sampled Target..
+    sample_msg      = rospy.wait_for_message('/sampled_target', PointStamped)           
+    x = sample_msg.point.y + 0.6
+    y = -sample_msg.point.x 
+    z = sample_msg.point.z
+    DS_attractor_sampled = [x,y,z,0,0,0,1]
 
-        # Wait for Sampled Target..
-        sample_msg      = rospy.wait_for_message('/sampled_target', PointStamped)           
-        x = sample_msg.point.y + 0.6
-        y = -sample_msg.point.x 
-        z = sample_msg.point.z
-        DS_attractor_sampled = [x,y,z,0,0,0,1]
-
-        # Get Current EE position
-        ee_msg      = rospy.wait_for_message('/panda_simulator/custom_franka_state_controller/tip_state', EndPointState)
-        ee_position = get_endpoint_state(ee_msg)
-
-
-        if first > 0:
-            if ee_position[1] < 0:
-                # Outside shelf (right-side)             
-                DS_attractor_joint_side   = [-0.49041676056762995, 0.7766592902718523, -0.7734337363858659, -1.4823211274344121, 
-                0.6100456652624864, 1.9938822682398296, -0.647085016124489]
-            else:
-                # Outside shelf (left-side)
-                DS_attractor_joint_side   = [0.2963225263724816, 0.4153249148679894, 0.9195334805130182, -1.801444127631573, -0.2435031473087399, 
-                2.0238766403464794, 2.047426326036671]
-
-            # ----------- Move robot to right side with joint position trajectory ----------- #
-            ####### Initialize Class #######
-            jointPositionController = JointMotionControl_StateDependent(DS_type_joint, A_q, DS_attractor_joint_side, ctrl_rate, 2, epsilon_joint)
-            ####### Run Control #######
-            finished_joint = jointPositionController.run()
-            
-            if finished_joint:     
-                # ----------- Move robot to initial position with collision avoidance! ----------- #
-                ### Inside-Workspace (over-table) ###        
-                DS_attractor_task_init   = [0.516, -0.000, 1.221, 0.983, -0.000, 0.183, 0.000] 
-                # Add the gamma functionS here
-                cartVelocityController = CartesianMotionControl_DSModulation(DS_type_task, A_p, A_o, DS_attractor_task_init, ctrl_rate, 
-                    epsilon_task, ctrl_orient, learned_gamma, pub_pose = 0)
-                ####### Run Control #######
-                finished_cart = cartVelocityController.run()
-        
-
-            # ----------- Fix initial joint configuration ----------- #
-            DS_attractor_joint_init   = [0.0, -0.3, 0.0, -2.0, 0.0, 2.0, PI/4.0]
-            ####### Initialize Class #######
-            jointPositionController = JointMotionControl_StateDependent(DS_type_joint, A_q, DS_attractor_joint_init, ctrl_rate, 2, epsilon_joint)
-            ####### Run Control #######
-            finished_joint_init = jointPositionController.run()
-
-
-        pub = rospy.Publisher('ready', String, queue_size=10)
-        hello_str = "READY"
-        rospy.loginfo(hello_str)
-        pub.publish(hello_str)
-        rospy.Rate(ctrl_rate).sleep()
-
-        # ----------- RUN OBSTACLE AVOIDANCE TASK WITH SAMPLED TARGET ----------- #
-        if finished_joint_init:
-            # Add the gamma functionS here
-            cartVelocityController = CartesianMotionControl_DSModulation(DS_type_task, A_p, A_o, DS_attractor_sampled, ctrl_rate, epsilon_task, 
-                ctrl_orient, learned_gamma)
-            ####### Run Control #######
-            cartVelocityController.run()
-
-        # Repeat!
-        # rospy.Rate(ctrl_rate).sleep()
-        first = first + 1
+    # Add the gamma functionS here
+    cartVelocityController = CartesianMotionControl_DSModulation(DS_type_task, A_p, A_o, DS_attractor_sampled, ctrl_rate, epsilon_task, 
+        ctrl_orient, learned_gamma)
+    ####### Run Control #######
+    cartVelocityController.run()

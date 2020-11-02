@@ -7,7 +7,9 @@ import numpy.linalg as LA
 from numpy import random as np_random
 
 # DS Modulation Libraries with Gamma Function
-sys.path.append("./dynamical_system_modulation_svm/")
+# This is ugly but can update later when we make the './dynamical_system_modulation_svm' a package that can be installed
+sys.path.append("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm")
+
 import learn_gamma_fn
 import modulation_svm
 import test_modulation_svm
@@ -114,8 +116,7 @@ if __name__ == '__main__':
         print("DONE.")
     else:
         # Load Pre-Learned Model
-        # learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
-        learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS_bounded.pkl", 'rb'))
+        learned_gamma, gamma_svm, c_svm = pickle.load(open("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS_bounded.pkl", 'rb'))
 
 
     if do_streamline:
@@ -150,10 +151,6 @@ if __name__ == '__main__':
     ##############################################
 
     # DS system matrix, gains for each task-space error    
-    # A_p = [[2.0, 0, 0], 
-    #        [0, 2.0, 0],
-    #        [0, 0, 2.0]]
-
     A_p = [[1.0, 0.0, 0.0], 
            [0.0, 1.0, 0.0],
            [0.0, 0.0, 1.0]]

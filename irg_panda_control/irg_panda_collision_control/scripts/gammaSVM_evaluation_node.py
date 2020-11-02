@@ -11,8 +11,11 @@ from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 import numpy as np
 
+
 # DS Modulation Libraries with Gamma Function
-sys.path.append("./dynamical_system_modulation_svm/")
+# This is ugly but can update later when we make the './dynamical_system_modulation_svm' a package that can be installed
+sys.path.append("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm")
+
 import learn_gamma_fn
 import test_modulation_svm
 import modulation_svm
@@ -124,29 +127,6 @@ def get_ee_position(msg):
   rospy.loginfo('EE position: {}'.format(ee_position))
   # recieved_position = True
 
-# def publish_plan():
-#   """
-#   publish the global plan
-#   """
-#   msg = Path()
-#   msg.header.frame_id = "/world"
-#   msg.header.stamp = rospy.Time.now()
-#   for wp in self._global_plan_world_coord:
-#       pose = PoseStamped()
-#       pose.pose.position.x = wp[0].location.x
-#       pose.pose.position.y = -wp[0].location.y
-#       pose.pose.position.z = wp[0].location.z
-#       # quaternion = tf.transformations.quaternion_from_euler(
-#       #     0, 0, -math.radians(wp[0].rotation.yaw))
-#       # pose.pose.orientation.x = 0
-#       # pose.pose.orientation.y = 0
-#       # pose.pose.orientation.z = 0
-#       # pose.pose.orientation.w = 1
-#       msg.poses.append(pose)
-
-#   rospy.loginfo("Publishing Plan...")
-#   pub_fw_int.publish(msg) 
-
 
 # --- ROS NODE INIT, SUBSCRIBERS AND PUBLISHERS --- #
 rospy.init_node("gammaSVM_evaluation_node")
@@ -165,7 +145,7 @@ if re_learn:
         plot_raw_data=False,  gamma_svm=gamma_svm, c_svm=c_svm, cluster_labels = c_labels)
 else:
     # Load Pre-Learned Model
-    learned_gamma, gamma_svm, c_svm = pickle.load(open("./dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
+    learned_gamma, gamma_svm, c_svm = pickle.load(open("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm/models/gammaSVM_frankaROCUS.pkl", 'rb'))
 
 points = create_points_gamma()
 fields = [PointField('x', 0, PointField.FLOAT32, 1),

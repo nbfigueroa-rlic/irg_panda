@@ -18,7 +18,7 @@ import numpy as np
 
 # For modulation!
 import sys
-sys.path.append("./dynamical_system_modulation_svm/")
+sys.path.append("/home/nbfigueroa/code/bayes-probe-robotics/dynamical_system_modulation_svm/")
 import learn_gamma_fn
 from modulation_utils import *
 import modulation_svm
